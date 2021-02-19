@@ -1,0 +1,19 @@
+{
+  "name": "Bachelorproef",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node -r esm src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Alexandros Christou",
+  "license": "ISC",
+  "dependencies": {
+    "esm": "^3.2.25",
+    "rx-node": "^1.0.2",
+    "rx-udp": "^0.1.0",
+    "rxjs": "^6.6.3",
+    "ws": "^7.2.3"
+  }
+}
