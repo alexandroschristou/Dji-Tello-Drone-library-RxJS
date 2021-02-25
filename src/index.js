@@ -156,33 +156,46 @@ udpClient.on('message', function (msg, info) {
 */
 
 // Delay for 3 seconds before we start ffmpeg
-setTimeout(function () {
-  var args = [
-    "-i", "udp://0.0.0.0:11111",
-    "-r", "30",
-    "-s", "960x720",
-    "-codec:v", "mpeg1video",
-    "-b", "800k",
-    "-f", "mpegts",
-    "http://127.0.0.1:3001/stream"
-  ];
+// setTimeout(function () {
+//   var args = [
+//     "-i", "udp://0.0.0.0:11111",
+//     "-r", "30",
+//     "-s", "960x720",
+//     "-codec:v", "mpeg1video",
+//     "-b", "800k",
+//     "-f", "mpegts",
+//     "http://127.0.0.1:3001/stream"
+//   ];
 
-  console.log(`Please enter a command:`);
-  rl.on("line", (line) => {
-    udpClient.send(line, TELLO_SEND_PORT, TELLO_IP)
-  });
+  // console.log(`Please enter a command:`);
+  // rl.on("line", (line) => {
+  //   udpClient.send(line, TELLO_SEND_PORT, TELLO_IP)
+  // });
 
-  // Spawn an ffmpeg instance
-  var streamer = spawn('ffmpeg', args);
-  // Uncomment if you want to see ffmpeg stream info
-  //streamer.stderr.pipe(process.stderr);
-  streamer.on("exit", function (code) {
-    console.log("Failure", code);
-  });
-}, 3000);
+//   // Spawn an ffmpeg instance
+//   var streamer = spawn('ffmpeg', args);
+//   // Uncomment if you want to see ffmpeg stream info
+//   //streamer.stderr.pipe(process.stderr);
+//   streamer.on("exit", function (code) {
+//     console.log("Failure", code);
+//   });
+// }, 3000);
 
+class Tello {
+  constructor() {}
+  // Tello's ID and Port
+  #TELLO_IP = '192.168.10.1'
+  #TELLO_SEND_PORT = 8889
+  #TELLO_RECEIVE_PORT = 8890
 
+  method_1(){
+    console.log(TELLO_IP)
+  }
+}
 
+let tello = new Tello();
+tello.method_1()
+console.log(tello.TELLO_IP)
 
 
 
