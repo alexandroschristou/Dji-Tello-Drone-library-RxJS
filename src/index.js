@@ -191,6 +191,10 @@ class Tello {
   method_1(){
     console.log(TELLO_IP)
   }
+
+  Send(msg){
+    udpClient.send(msg, TELLO_SEND_PORT, TELLO_IP, null);
+  }
 }
 
 let tello = new Tello();
