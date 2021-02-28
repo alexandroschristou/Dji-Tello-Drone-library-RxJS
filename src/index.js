@@ -35,7 +35,7 @@ const STREAM_PORT = 3001
 // Tello's ID and Port
 const TELLO_IP = '192.168.10.1'
 const TELLO_SEND_PORT = 8889
-const TELLO_RECEIVE_PORT = 8890
+const TELLO_STATE_PORT = 8890
 
 const readline = require("readline");
 
@@ -128,7 +128,7 @@ webSocketServer.broadcast = function (data) {
 */
 const udpServer = dgram.createSocket('udp4');
 
-udpServer.bind(TELLO_RECEIVE_PORT);
+udpServer.bind(TELLO_STATE_PORT);
 
 const observable = observableFromSocket(udpServer);
 const observer = {
@@ -182,19 +182,35 @@ udpClient.on('message', function (msg, info) {
 // }, 3000);
 
 class Tello {
-  constructor() {}
+  constructor() {
   // Tello's ID and Port
-  #TELLO_IP = '192.168.10.1'
-  #TELLO_SEND_PORT = 8889
-  #TELLO_RECEIVE_PORT = 8890
+  this.TELLO_IP = '192.168.10.1'
+  this.TELLO_SEND_PORT = 8889
+  this.TELLO_STATE_PORT = 8890
+
+  this.STREAM_UDP_IP = '0.0.0.0'
+  this.STREAM_UDP_PORT = 11111
+
+  this.RESPONSE_TIMEOUT = 7
+  this.TAKEOFF_TIMEOUT = 20  // in seconds
+  this.TIME_BTW_COMMANDS = 0.1 //# in seconds
+  this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
+  this.RETRY_COUNT = 3  // number of retries after a failed command
+  
+
+
+}
+//https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
+
 
   method_1(){
-    console.log(TELLO_IP)
+    console.log(this.DATE.getTime())
   }
 
-  Send(msg){
-    udpClient.send(msg, TELLO_SEND_PORT, TELLO_IP, null);
+  send_command_with_return(msg){
+    udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
+
 }
 
 let tello = new Tello();
