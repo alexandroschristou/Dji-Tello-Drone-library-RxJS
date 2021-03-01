@@ -191,6 +191,9 @@ class Tello {
   this.STREAM_UDP_IP = '0.0.0.0'
   this.STREAM_UDP_PORT = 11111
 
+  this.IS_FLYING = false
+  this.STREAM_ON = false
+
   this.RESPONSE_TIMEOUT = 7
   this.TAKEOFF_TIMEOUT = 20  // in seconds
   this.TIME_BTW_COMMANDS = 0.1 //# in seconds
@@ -210,6 +213,149 @@ class Tello {
   send_command_with_return(msg){
     udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
+
+  send_simple_command(msg){
+    udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+  }
+
+  send_read_command(cmd){
+    this.send_command_with_return(cmd)
+  }
+  
+  send_control_command(cmd){
+    this.send_command_with_return(cmd)
+  }
+
+  takeoff(){
+    this.send_control_command("takeoff")
+    this.IS_FLYING = true
+  }
+
+  land(){
+    this.send_control_command("land")
+    this.IS_FLYING = false
+  }
+
+  streamon(){
+    this.send_control_command("streamon")
+    this.STREAM_ON = true
+  }
+  streamoff(){
+    this.send_control_command("streamoff")
+    this.STREAM_ON = false
+  }
+
+  emergency(){
+    this.send_control_command("emergency")
+  }
+
+  move(direction, distance){
+    this.send_control_command(`${direction} ${distance}`)
+  }
+
+  move_up(distance){
+    this.move("up", distance)
+  }
+
+  move_down(distance){
+    this.move("down", distance)
+  }
+ 
+  move_left(distance){
+    this.move("left", distance)
+  }
+
+  move_right(distance){
+    this.move("right", distance)
+  }
+
+  move_forward(distance){
+    this.move("forward", distance)
+  }
+  move_back(distance){
+    this.move("back", distance)
+  }
+
+  rotate_clockwise(degree){
+    this.send_control_command(`cw ${degree}`)
+  }
+
+  rotate_counter_clockwise(degree){
+    this.send_control_command(`ccw ${degree}`)
+  }
+
+  flip(direction){
+    this.send_control_command(`flip ${direction}`)
+  }
+
+  flip_left(){
+    this.flip("l")
+  }
+
+  flip_right(){
+    this.flip("r")
+  }
+
+  flip_forward(){
+    this.flip("f")
+  }
+
+  flip_back(){
+    this.flip("b")
+  }
+
+  go_xyz_speed(x, y, z, speed){
+    this.send_control_command(`go ${x} ${y} ${z} ${speed}`)
+  }
+
+  curve_xyz_speed(x1, y1, z1, x2, y2, z2, speed){
+    this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed}`)
+  }
+
+  go_xyz_speed_mid(x, y, z, speed, mid){
+    this.send_control_command(`go ${x} ${y} ${z} ${speed} m${mid}`)
+  }
+
+  curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid){
+    this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed} m${mid}`)
+  }
+
+  go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2){
+    this.send_control_command(`jump ${x} ${y} ${z} ${speed} ${yaw} m${mid1} m${mid2}`)
+  }
+
+  enable_mission_pads(){
+    this.send_control_command("mon")
+  }
+
+  disable_mission_pads(){
+    this.send_control_command("moff")
+  }
+
+  set_mission_pad_detection_direction(direction){
+    this.send_control_command(`mdirection ${direction}`)
+  }
+
+  set_speed(speed){
+    this.send_control_command(`speed ${speed}`)
+  }
+
+  send_rc_control(){
+    console.log("not yet implemented")
+  }
+
+  set_wifi_credentials(ssid, password){
+    this.send_simple_command(`wifi ${ssid} ${password}`)
+  }
+
+  connect_to_wifi(ssid, password){
+    this.send_simple_command(`ap ${ssid} ${password}`)
+  }
+
+  get_speed(){
+    this.send_read_command('speed?')
+  }
+
 
 }
 
