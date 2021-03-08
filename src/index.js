@@ -182,6 +182,8 @@ class Tello {
     this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
     this.RETRY_COUNT = 3  // number of retries after a failed command
     this.state_data = {}
+    this.udpServer = null
+    this.udpClient = null
   }
   //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
 
@@ -196,47 +198,47 @@ class Tello {
         dict[x[0]] = parseFloat(x[1]);
       }
     })
-    // console.log("dict:")
-    // console.log(dict)
-    // console.log()
 
     this.state_data = dict;
-
-    //console.log(this.state_data)
   }
+
   init() {
-    const udpServer = dgram.createSocket('udp4');
-    udpServer.bind(TELLO_STATE_PORT);
+    this.udpServer = dgram.createSocket('udp4');
+    this.udpServer.bind(TELLO_STATE_PORT);
 
-    const udpClient = dgram.createSocket('udp4');
-    udpClient.bind(TELLO_SEND_PORT);
+    this.udpClient = dgram.createSocket('udp4');
+    this.udpClient.bind(TELLO_SEND_PORT);
 
-    const Server = observableFromSocket(udpServer);
+    const Server = observableFromSocket(this.udpServer);
     const observer = {
       next: x => this.parse_state_data(x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
       error: err => console.error('Observer got an error: ' + err),
-      complete: () => console.log('Observer got a complete notification'),
+      complete: () => console.log('Observer got a complete notification')
     };
     Server.subscribe(observer)
 
    
     // These send commands could be smarter by waiting for the SDK to respond with 'ok' and handling errors
     // Send command
+   
+
+    const Client = observableFromSocket(this.udpClient);
+    Client.subscribe(
+      x => console.log(x[1]),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+      err => console.error('Observer got an error: ' + err),
+      () => console.log('Observer got a complete notification'),
+    )
+
     this.command()
     this.streamon()
-
-    udpClient.on('message', function (msg, info) {
-      console.log('Data received from server : ' + msg.toString());
-      console.log('Received %d bytes from %s:%d\n', msg.length, info.address, info.port);
-    });
   }
 
   send_command_with_return(msg) {
-    udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
   send_simple_command(msg) {
-    udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
   send_read_command(cmd) {
