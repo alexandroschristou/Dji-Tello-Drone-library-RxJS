@@ -11,7 +11,10 @@
 
 // Import necessary modules for the project
 
-import { Observable } from 'rxjs';
+import { Observable, from } from 'rxjs';
+import { map, filter } from 'rxjs/operators';
+3
+
 
 // A basic http server that we'll access to view the stream
 const http = require('http');
@@ -47,17 +50,19 @@ const rl = readline.createInterface({
 /* code to make our own observable from a socket */
 export function observableFromSocket(socket) {
   return new Observable(function subscribe(subscriber) {
-      socket.on('message', function (msg, info) {
-          subscriber.next([msg.toString(), info]);
-      });
-      socket.on("error", err => {
-          observer.error(err);
-      });
-      socket.on("close", () => {
-          observer.complete();
-      });
+    socket.on('message', function (msg, info) {
+      subscriber.next([msg.toString(), info]);
+    });
+    socket.on("error", err => {
+      observer.error(err);
+    });
+    socket.on("close", () => {
+      observer.complete();
+    });
   });
 };
+
+
 
 /*
   1. Create the web server that the user can access at
@@ -126,30 +131,10 @@ webSocketServer.broadcast = function (data) {
   4. Send the command and streamon SDK commands to begin the Tello video stream.
   YOU MUST POWER UP AND CONNECT TO TELL BEFORE RUNNING THIS SCRIPT
 */
-const udpServer = dgram.createSocket('udp4');
-
-udpServer.bind(TELLO_STATE_PORT);
-
-const observable = observableFromSocket(udpServer);
-const observer = {
-    next: x => console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].length, x[1].address, x[1].port),
-    error: err => console.error('Observer got an error: ' + err),
-    complete: () => console.log('Observer got a complete notification'),
-  };
-observable.subscribe(observer)
 
 
-const udpClient = dgram.createSocket('udp4');
-udpClient.bind(TELLO_SEND_PORT);
-// These send commands could be smarter by waiting for the SDK to respond with 'ok' and handling errors
-// Send command
-udpClient.send("command", TELLO_SEND_PORT, TELLO_IP, null);
-udpClient.send("streamon", TELLO_SEND_PORT, TELLO_IP, null);
 
-udpClient.on('message', function (msg, info) {
-  console.log('Data received from server : ' + msg.toString());
-  console.log('Received %d bytes from %s:%d\n', msg.length, info.address, info.port);
-});
+
 
 /*
   5. Begin the ffmpeg stream. You must have Tello connected first
@@ -167,10 +152,7 @@ udpClient.on('message', function (msg, info) {
 //     "http://127.0.0.1:3001/stream"
 //   ];
 
-  // console.log(`Please enter a command:`);
-  // rl.on("line", (line) => {
-  //   udpClient.send(line, TELLO_SEND_PORT, TELLO_IP)
-  // });
+
 
 //   // Spawn an ffmpeg instance
 //   var streamer = spawn('ffmpeg', args);
@@ -183,176 +165,219 @@ udpClient.on('message', function (msg, info) {
 
 class Tello {
   constructor() {
-  // Tello's ID and Port
-  this.TELLO_IP = '192.168.10.1'
-  this.TELLO_SEND_PORT = 8889
-  this.TELLO_STATE_PORT = 8890
+    // Tello's ID and Port
+    this.TELLO_IP = '192.168.10.1'
+    this.TELLO_SEND_PORT = 8889
+    this.TELLO_STATE_PORT = 8890
 
-  this.STREAM_UDP_IP = '0.0.0.0'
-  this.STREAM_UDP_PORT = 11111
+    this.STREAM_UDP_IP = '0.0.0.0'
+    this.STREAM_UDP_PORT = 11111
 
-  this.IS_FLYING = false
-  this.STREAM_ON = false
+    this.IS_FLYING = false
+    this.STREAM_ON = false
 
-  this.RESPONSE_TIMEOUT = 7
-  this.TAKEOFF_TIMEOUT = 20  // in seconds
-  this.TIME_BTW_COMMANDS = 0.1 //# in seconds
-  this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
-  this.RETRY_COUNT = 3  // number of retries after a failed command
-  
+    this.RESPONSE_TIMEOUT = 7
+    this.TAKEOFF_TIMEOUT = 20  // in seconds
+    this.TIME_BTW_COMMANDS = 0.1 //# in seconds
+    this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
+    this.RETRY_COUNT = 3  // number of retries after a failed command
+    this.state_data = {}
+  }
+  //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
 
+  parse_state_data(data) {
+    let state = data[0].trim();
+    let additional_info = data[1];
+    let dict = {};
+    let res = state.split(";")
+    res.forEach(function (el) {
+      if (el.length > 1) {
+        var x = el.split(":")
+        dict[x[0]] = parseFloat(x[1]);
+      }
+    })
+    // console.log("dict:")
+    // console.log(dict)
+    // console.log()
 
-}
-//https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
+    this.state_data = dict;
 
+    //console.log(this.state_data)
+  }
+  init() {
+    const udpServer = dgram.createSocket('udp4');
+    udpServer.bind(TELLO_STATE_PORT);
 
-  method_1(){
-    console.log(this.DATE.getTime())
+    const udpClient = dgram.createSocket('udp4');
+    udpClient.bind(TELLO_SEND_PORT);
+
+    const Server = observableFromSocket(udpServer);
+    const observer = {
+      next: x => this.parse_state_data(x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+      error: err => console.error('Observer got an error: ' + err),
+      complete: () => console.log('Observer got a complete notification'),
+    };
+    Server.subscribe(observer)
+
+   
+    // These send commands could be smarter by waiting for the SDK to respond with 'ok' and handling errors
+    // Send command
+    this.command()
+    this.streamon()
+
+    udpClient.on('message', function (msg, info) {
+      console.log('Data received from server : ' + msg.toString());
+      console.log('Received %d bytes from %s:%d\n', msg.length, info.address, info.port);
+    });
   }
 
-  send_command_with_return(msg){
+  send_command_with_return(msg) {
     udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
-  send_simple_command(msg){
+  send_simple_command(msg) {
     udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
-  send_read_command(cmd){
-    this.send_command_with_return(cmd)
-  }
-  
-  send_control_command(cmd){
+  send_read_command(cmd) {
     this.send_command_with_return(cmd)
   }
 
-  takeoff(){
+  send_control_command(cmd) {
+    this.send_command_with_return(cmd)
+  }
+
+  takeoff() {
     this.send_control_command("takeoff")
     this.IS_FLYING = true
   }
 
-  land(){
+  land() {
     this.send_control_command("land")
     this.IS_FLYING = false
   }
 
-  streamon(){
+  command() {
+    this.send_control_command("command")
+  }
+
+  streamon() {
     this.send_control_command("streamon")
     this.STREAM_ON = true
   }
-  streamoff(){
+  streamoff() {
     this.send_control_command("streamoff")
     this.STREAM_ON = false
   }
 
-  emergency(){
+  emergency() {
     this.send_control_command("emergency")
   }
 
-  move(direction, distance){
+  move(direction, distance) {
     this.send_control_command(`${direction} ${distance}`)
   }
 
-  move_up(distance){
+  move_up(distance) {
     this.move("up", distance)
   }
 
-  move_down(distance){
+  move_down(distance) {
     this.move("down", distance)
   }
- 
-  move_left(distance){
+
+  move_left(distance) {
     this.move("left", distance)
   }
 
-  move_right(distance){
+  move_right(distance) {
     this.move("right", distance)
   }
 
-  move_forward(distance){
+  move_forward(distance) {
     this.move("forward", distance)
   }
-  move_back(distance){
+  move_back(distance) {
     this.move("back", distance)
   }
 
-  rotate_clockwise(degree){
+  rotate_clockwise(degree) {
     this.send_control_command(`cw ${degree}`)
   }
 
-  rotate_counter_clockwise(degree){
+  rotate_counter_clockwise(degree) {
     this.send_control_command(`ccw ${degree}`)
   }
 
-  flip(direction){
+  flip(direction) {
     this.send_control_command(`flip ${direction}`)
   }
 
-  flip_left(){
+  flip_left() {
     this.flip("l")
   }
 
-  flip_right(){
+  flip_right() {
     this.flip("r")
   }
 
-  flip_forward(){
+  flip_forward() {
     this.flip("f")
   }
 
-  flip_back(){
+  flip_back() {
     this.flip("b")
   }
 
-  go_xyz_speed(x, y, z, speed){
+  go_xyz_speed(x, y, z, speed) {
     this.send_control_command(`go ${x} ${y} ${z} ${speed}`)
   }
 
-  curve_xyz_speed(x1, y1, z1, x2, y2, z2, speed){
+  curve_xyz_speed(x1, y1, z1, x2, y2, z2, speed) {
     this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed}`)
   }
 
-  go_xyz_speed_mid(x, y, z, speed, mid){
+  go_xyz_speed_mid(x, y, z, speed, mid) {
     this.send_control_command(`go ${x} ${y} ${z} ${speed} m${mid}`)
   }
 
-  curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid){
+  curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid) {
     this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed} m${mid}`)
   }
 
-  go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2){
+  go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2) {
     this.send_control_command(`jump ${x} ${y} ${z} ${speed} ${yaw} m${mid1} m${mid2}`)
   }
 
-  enable_mission_pads(){
+  enable_mission_pads() {
     this.send_control_command("mon")
   }
 
-  disable_mission_pads(){
+  disable_mission_pads() {
     this.send_control_command("moff")
   }
 
-  set_mission_pad_detection_direction(direction){
+  set_mission_pad_detection_direction(direction) {
     this.send_control_command(`mdirection ${direction}`)
   }
 
-  set_speed(speed){
+  set_speed(speed) {
     this.send_control_command(`speed ${speed}`)
   }
 
-  send_rc_control(){
+  send_rc_control() {
     console.log("not yet implemented")
   }
 
-  set_wifi_credentials(ssid, password){
+  set_wifi_credentials(ssid, password) {
     this.send_simple_command(`wifi ${ssid} ${password}`)
   }
 
-  connect_to_wifi(ssid, password){
+  connect_to_wifi(ssid, password) {
     this.send_simple_command(`ap ${ssid} ${password}`)
   }
 
-  get_speed(){
+  get_speed() {
     this.send_read_command('speed?')
   }
 
@@ -360,8 +385,10 @@ class Tello {
 }
 
 let tello = new Tello();
-tello.method_1()
-console.log(tello.TELLO_IP)
+tello.init()
 
-
+console.log(`Please enter a command:`);
+rl.on("line", (line) => {
+  console.log(tello.state_data)
+});
 
