@@ -13,7 +13,6 @@
 
 import { Observable, from } from 'rxjs';
 import { map, filter } from 'rxjs/operators';
-3
 
 
 // A basic http server that we'll access to view the stream
@@ -34,11 +33,6 @@ const dgram = require('dgram');
 // HTTP and streaming ports
 const HTTP_PORT = 3000;
 const STREAM_PORT = 3001
-
-// Tello's ID and Port
-const TELLO_IP = '192.168.10.1'
-const TELLO_SEND_PORT = 8889
-const TELLO_STATE_PORT = 8890
 
 const readline = require("readline");
 
@@ -64,68 +58,9 @@ export function observableFromSocket(socket) {
 
 
 
-/*
-  1. Create the web server that the user can access at
-  http://localhost:3000/index.html
-*/
-var server = http.createServer(function (request, response) {
 
-  // Log that an http connection has come through
-  console.log(
-    'HTTP Connection on ' + HTTP_PORT + ' from: ' +
-    request.socket.remoteAddress + ':' +
-    request.socket.remotePort
-  );
 
-  // Read file from the local directory and serve to user
-  // in this case it will be index.html
-  fs.readFile(__dirname + '/www/' + request.url, function (err, data) {
-    if (err) {
-      response.writeHead(404);
-      response.end(JSON.stringify(err));
-      return;
-    }
-    response.writeHead(200);
-    response.end(data);
-  });
 
-}).listen(HTTP_PORT); // Listen on port 3000
-
-/*
-  2. Create the stream server where the video stream will be sent
-*/
-const streamServer = http.createServer(function (request, response) {
-
-  // Log that a stream connection has come through
-  console.log(
-    'Stream Connection on ' + STREAM_PORT + ' from: ' +
-    request.socket.remoteAddress + ':' +
-    request.socket.remotePort
-  );
-
-  // When data comes from the stream (FFmpeg) we'll pass this to the web socket
-  request.on('data', function (data) {
-    // Now that we have data let's pass it to the web socket server
-    webSocketServer.broadcast(data);
-  });
-
-}).listen(STREAM_PORT); // Listen for streams on port 3001
-
-/*
-  3. Begin web socket server
-*/
-const webSocketServer = new WebSocket.Server({
-  server: streamServer
-});
-
-// Broadcast the stream via websocket to connected clients
-webSocketServer.broadcast = function (data) {
-  webSocketServer.clients.forEach(function each(client) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
-    }
-  });
-};
 
 /* 
   4. Send the command and streamon SDK commands to begin the Tello video stream.
@@ -136,32 +71,9 @@ webSocketServer.broadcast = function (data) {
 
 
 
-/*
-  5. Begin the ffmpeg stream. You must have Tello connected first
-*/
-
-// Delay for 3 seconds before we start ffmpeg
-// setTimeout(function () {
-//   var args = [
-//     "-i", "udp://0.0.0.0:11111",
-//     "-r", "30",
-//     "-s", "960x720",
-//     "-codec:v", "mpeg1video",
-//     "-b", "800k",
-//     "-f", "mpegts",
-//     "http://127.0.0.1:3001/stream"
-//   ];
 
 
 
-//   // Spawn an ffmpeg instance
-//   var streamer = spawn('ffmpeg', args);
-//   // Uncomment if you want to see ffmpeg stream info
-//   //streamer.stderr.pipe(process.stderr);
-//   streamer.on("exit", function (code) {
-//     console.log("Failure", code);
-//   });
-// }, 3000);
 
 class Tello {
   constructor() {
@@ -184,6 +96,9 @@ class Tello {
     this.state_data = {}
     this.udpServer = null
     this.udpClient = null
+    this.webServer = null
+    this.streamServer = null
+    this.webSocketServer = null
   }
   //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
 
@@ -202,12 +117,103 @@ class Tello {
     this.state_data = dict;
   }
 
+  /*
+  1. Create the web server that the user can access at
+  http://localhost:3000/index.html
+*/
+  start_web_server() {
+    this.webServer = http.createServer(function (request, response) {
+
+      // Log that an http connection has come through
+      console.log(
+        'HTTP Connection on ' + HTTP_PORT + ' from: ' +
+        request.socket.remoteAddress + ':' +
+        request.socket.remotePort
+      );
+
+      // Read file from the local directory and serve to user
+      // in this case it will be index.html
+      fs.readFile(__dirname + '/www/' + request.url, function (err, data) {
+        if (err) {
+          response.writeHead(404);
+          response.end(JSON.stringify(err));
+          return;
+        }
+        response.writeHead(200);
+        response.end(data);
+      });
+
+    }).listen(HTTP_PORT); // Listen on port 3000
+    /*
+  2. Create the stream server where the video stream will be sent
+*/
+    this.streamServer = http.createServer(function (request, response) {
+
+      // Log that a stream connection has come through
+      console.log(
+        'Stream Connection on ' + STREAM_PORT + ' from: ' +
+        request.socket.remoteAddress + ':' +
+        request.socket.remotePort
+      );
+
+      // When data comes from the stream (FFmpeg) we'll pass this to the web socket
+      request.on('data', function (data) {
+        // Now that we have data let's pass it to the web socket server
+        webSocketServer.broadcast(data);
+      });
+
+    }).listen(STREAM_PORT); // Listen for streams on port 3001
+
+    /*
+      3. Begin web socket server
+    */
+    this.webSocketServer = new WebSocket.Server({
+      server: streamServer
+    });
+
+    // Broadcast the stream via websocket to connected clients
+    webSocketServer.broadcast = function (data) {
+      webSocketServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(data);
+        }
+      });
+    };
+
+    /*
+  5. Begin the ffmpeg stream. You must have Tello connected first
+*/
+
+    //Delay for 3 seconds before we start ffmpeg
+    setTimeout(function () {
+      var args = [
+        "-i", "udp://0.0.0.0:11111",
+        "-r", "30",
+        "-s", "960x720",
+        "-codec:v", "mpeg1video",
+        "-b", "800k",
+        "-f", "mpegts",
+        "http://127.0.0.1:3001/stream"
+      ];
+
+
+
+      // Spawn an ffmpeg instance
+      var streamer = spawn('ffmpeg', args);
+      // Uncomment if you want to see ffmpeg stream info
+      //streamer.stderr.pipe(process.stderr);
+      streamer.on("exit", function (code) {
+        console.log("Failure", code);
+      });
+    }, 3000);
+  }
+
   init() {
     this.udpServer = dgram.createSocket('udp4');
-    this.udpServer.bind(TELLO_STATE_PORT);
+    this.udpServer.bind(this.TELLO_STATE_PORT);
 
     this.udpClient = dgram.createSocket('udp4');
-    this.udpClient.bind(TELLO_SEND_PORT);
+    this.udpClient.bind(this.TELLO_SEND_PORT);
 
     const Server = observableFromSocket(this.udpServer);
     const observer = {
@@ -217,10 +223,10 @@ class Tello {
     };
     Server.subscribe(observer)
 
-   
+
     // These send commands could be smarter by waiting for the SDK to respond with 'ok' and handling errors
     // Send command
-   
+
 
     const Client = observableFromSocket(this.udpClient);
     Client.subscribe(
@@ -387,10 +393,14 @@ class Tello {
 }
 
 let tello = new Tello();
-tello.init()
+tello.init();
+tello.start_web_server();
 
-console.log(`Please enter a command:`);
-rl.on("line", (line) => {
-  console.log(tello.state_data)
-});
+
+
+// console.log(`Please enter a command:`);
+// rl.on("line", (line) => {
+//   console.log(tello.state_data)
+// });
+
 
