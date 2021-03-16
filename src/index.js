@@ -96,6 +96,7 @@ class Tello {
     this.state_data = {}
     this.udpServer = null
     this.udpClient = null
+
     this.webServer = null
     this.streamServer = null
     this.webSocketServer = null
@@ -115,14 +116,17 @@ class Tello {
     })
 
     this.state_data = dict;
+    //console.log(this.state_data);
   }
+  
 
   /*
   1. Create the web server that the user can access at
   http://localhost:3000/index.html
 */
   start_web_server() {
-    this.webServer = http.createServer(function (request, response) {
+    let parentObject = this;
+    parentObject.webServer = http.createServer(function (request, response) {
 
       // Log that an http connection has come through
       console.log(
@@ -147,8 +151,9 @@ class Tello {
     /*
   2. Create the stream server where the video stream will be sent
 */
-    this.streamServer = http.createServer(function (request, response) {
+    parentObject.streamServer = http.createServer(function (request, response) {
 
+      
       // Log that a stream connection has come through
       console.log(
         'Stream Connection on ' + STREAM_PORT + ' from: ' +
@@ -159,7 +164,7 @@ class Tello {
       // When data comes from the stream (FFmpeg) we'll pass this to the web socket
       request.on('data', function (data) {
         // Now that we have data let's pass it to the web socket server
-        webSocketServer.broadcast(data);
+        parentObject.webSocketServer.broadcast(data);
       });
 
     }).listen(STREAM_PORT); // Listen for streams on port 3001
@@ -167,13 +172,13 @@ class Tello {
     /*
       3. Begin web socket server
     */
-    this.webSocketServer = new WebSocket.Server({
-      server: streamServer
+    parentObject.webSocketServer = new WebSocket.Server({
+      server: parentObject.streamServer
     });
 
     // Broadcast the stream via websocket to connected clients
-    webSocketServer.broadcast = function (data) {
-      webSocketServer.clients.forEach(function each(client) {
+    parentObject.webSocketServer.broadcast = function (data) {
+      parentObject.webSocketServer.clients.forEach(function each(client) {
         if (client.readyState === WebSocket.OPEN) {
           client.send(data);
         }
@@ -230,7 +235,7 @@ class Tello {
 
     const Client = observableFromSocket(this.udpClient);
     Client.subscribe(
-      x => console.log(x[1]),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+      x => console.log(x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
       err => console.error('Observer got an error: ' + err),
       () => console.log('Observer got a complete notification'),
     )
@@ -240,6 +245,8 @@ class Tello {
   }
 
   send_command_with_return(msg) {
+    //here i will use subjects to add values and send them to the drone
+    //https://stackoverflow.com/questions/33324227/rxjs-how-would-i-manually-update-an-observable
     this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
@@ -253,6 +260,18 @@ class Tello {
 
   send_control_command(cmd) {
     this.send_command_with_return(cmd)
+  }
+
+  get_state_field(key){
+    console.log(this.state_data);
+    console.log(key)
+    if (this.state_data.hasOwnProperty(key)){
+      console.log(this.state_data[key])
+      return this.state_data[key];
+    }
+    else {
+      console.log("error state isn't known, not in state_data")
+    }
   }
 
   takeoff() {
@@ -389,12 +408,96 @@ class Tello {
     this.send_read_command('speed?')
   }
 
+  get_mission_pad_id(){
+    this.get_state_field('mid')
+  }
+
+  get_mission_pad_distance_x(){
+    this.get_state_field('x')
+  }
+
+  get_mission_pad_distance_y(){
+    this.get_state_field('y')
+  }
+
+  get_mission_pad_distance_z(){
+    this.get_state_field('z')
+  }
+
+  get_pitch(){
+    this.get_state_field('pitch')
+  }
+
+  get_roll(){
+    this.get_state_field('roll')
+  }
+
+  get_yaw(){
+    this.get_state_field('yaw')
+  }
+
+  get_Xspeed(){
+    this.get_state_field('vgx')
+  }
+
+  get_Yspeed(){
+    this.get_state_field('vgy')
+  }
+
+  get_Zspeed(){
+    this.get_state_field('vgz')
+  }
+
+  get_lowest_temp(){
+    this.get_state_field('templ')
+  }
+  
+  get_highest_temp(){
+    this.get_state_field('temph')
+  }
+
+  get_time_of_flight(){
+    this.get_state_field('tof')
+  }
+
+  get_height(){
+    this.get_state_field('h')
+  }
+
+  get_battery_percentage(){
+    this.get_state_field('bat')
+  }
+
+  get_barometer(){
+    this.get_state_field('baro')
+  }
+
+  get_motor_time(){
+    this.get_state_field('time')
+  } 
+
+  get_Xacceleration(){
+    this.get_state_field('agx')
+  }
+
+  get_Yacceleration(){
+    this.get_state_field('agy')
+  }
+
+  get_Zacceleration(){
+    this.get_state_field('agz')
+  }
 
 }
 
 let tello = new Tello();
 tello.init();
+
 tello.start_web_server();
+// setTimeout(function () {
+//   tello.get_Xacceleration();
+// }, 3000)
+
 
 
 
