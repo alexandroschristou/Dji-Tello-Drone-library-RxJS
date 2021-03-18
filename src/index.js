@@ -11,7 +11,7 @@
 
 // Import necessary modules for the project
 
-import { Observable, from } from 'rxjs';
+import { Observable, from, Subject } from 'rxjs';
 import { map, filter } from 'rxjs/operators';
 
 
@@ -100,6 +100,13 @@ class Tello {
     this.webServer = null
     this.streamServer = null
     this.webSocketServer = null
+
+    this.testSubject = new Subject();
+    this.testSubject.subscribe(
+      x => console.log("value received:", x),
+      err => console.error('subject got an error: ' + err),
+      () => console.log('subject got a complete notification'),
+    )
   }
   //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
 
@@ -118,7 +125,7 @@ class Tello {
     this.state_data = dict;
     //console.log(this.state_data);
   }
-  
+
 
   /*
   1. Create the web server that the user can access at
@@ -153,7 +160,7 @@ class Tello {
 */
     parentObject.streamServer = http.createServer(function (request, response) {
 
-      
+
       // Log that a stream connection has come through
       console.log(
         'Stream Connection on ' + STREAM_PORT + ' from: ' +
@@ -244,10 +251,14 @@ class Tello {
     this.streamon()
   }
 
+
+
   send_command_with_return(msg) {
     //here i will use subjects to add values and send them to the drone
     //https://stackoverflow.com/questions/33324227/rxjs-how-would-i-manually-update-an-observable
-    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    
+    this.testSubject.next(msg);
+    //this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
   send_simple_command(msg) {
@@ -262,10 +273,10 @@ class Tello {
     this.send_command_with_return(cmd)
   }
 
-  get_state_field(key){
+  get_state_field(key) {
     console.log(this.state_data);
     console.log(key)
-    if (this.state_data.hasOwnProperty(key)){
+    if (this.state_data.hasOwnProperty(key)) {
       console.log(this.state_data[key])
       return this.state_data[key];
     }
@@ -408,83 +419,83 @@ class Tello {
     this.send_read_command('speed?')
   }
 
-  get_mission_pad_id(){
+  get_mission_pad_id() {
     this.get_state_field('mid')
   }
 
-  get_mission_pad_distance_x(){
+  get_mission_pad_distance_x() {
     this.get_state_field('x')
   }
 
-  get_mission_pad_distance_y(){
+  get_mission_pad_distance_y() {
     this.get_state_field('y')
   }
 
-  get_mission_pad_distance_z(){
+  get_mission_pad_distance_z() {
     this.get_state_field('z')
   }
 
-  get_pitch(){
+  get_pitch() {
     this.get_state_field('pitch')
   }
 
-  get_roll(){
+  get_roll() {
     this.get_state_field('roll')
   }
 
-  get_yaw(){
+  get_yaw() {
     this.get_state_field('yaw')
   }
 
-  get_Xspeed(){
+  get_Xspeed() {
     this.get_state_field('vgx')
   }
 
-  get_Yspeed(){
+  get_Yspeed() {
     this.get_state_field('vgy')
   }
 
-  get_Zspeed(){
+  get_Zspeed() {
     this.get_state_field('vgz')
   }
 
-  get_lowest_temp(){
+  get_lowest_temp() {
     this.get_state_field('templ')
   }
-  
-  get_highest_temp(){
+
+  get_highest_temp() {
     this.get_state_field('temph')
   }
 
-  get_time_of_flight(){
+  get_time_of_flight() {
     this.get_state_field('tof')
   }
 
-  get_height(){
+  get_height() {
     this.get_state_field('h')
   }
 
-  get_battery_percentage(){
+  get_battery_percentage() {
     this.get_state_field('bat')
   }
 
-  get_barometer(){
+  get_barometer() {
     this.get_state_field('baro')
   }
 
-  get_motor_time(){
+  get_motor_time() {
     this.get_state_field('time')
-  } 
+  }
 
-  get_Xacceleration(){
+  get_Xacceleration() {
     this.get_state_field('agx')
   }
 
-  get_Yacceleration(){
+  get_Yacceleration() {
     this.get_state_field('agy')
   }
 
-  get_Zacceleration(){
+  get_Zacceleration() {
     this.get_state_field('agz')
   }
 
