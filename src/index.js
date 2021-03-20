@@ -103,7 +103,8 @@ class Tello {
 
     this.testSubject = new Subject();
     this.testSubject.subscribe(
-      x => console.log("value received:", x),
+      x => {console.log("value received:", x)
+    },
       err => console.error('subject got an error: ' + err),
       () => console.log('subject got a complete notification'),
     )
@@ -258,7 +259,7 @@ class Tello {
     //https://stackoverflow.com/questions/33324227/rxjs-how-would-i-manually-update-an-observable
     
     this.testSubject.next(msg);
-    //this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
   }
 
   send_simple_command(msg) {
@@ -505,9 +506,15 @@ let tello = new Tello();
 tello.init();
 
 tello.start_web_server();
-// setTimeout(function () {
-//   tello.get_Xacceleration();
-// }, 3000)
+setTimeout(function () {
+  tello.takeoff();
+}, 3000)
+setTimeout(function () {
+  tello.rotate_clockwise(90);
+}, 10000)
+setTimeout(function () {
+  tello.land();
+}, 15000)
 
 
 
