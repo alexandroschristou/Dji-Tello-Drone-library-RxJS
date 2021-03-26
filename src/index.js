@@ -11,25 +11,24 @@
 
 // Import necessary modules for the project
 
-import { Observable, from, Subject } from 'rxjs';
-import { map, filter } from 'rxjs/operators';
+import { Observable, from, Subject, } from 'rxjs';
+import { map, filter, concatMap, scan,  take } from 'rxjs/operators';
+import * as tf from "@tensorflow/tfjs";
+import * as posenet from "@tensorflow-models/posenet";
 
-
+const timestamp = require('performance-now');
+const numeral = require('numeral');
+const P = require('bluebird');
 // A basic http server that we'll access to view the stream
 const http = require('http');
-
 // To keep things simple we read the index.html page and send it to the client
 const fs = require('fs');
-
 // WebSocket for broadcasting stream to connected clients
 const WebSocket = require('ws');
-
 // We'll spawn ffmpeg as a separate process
 const spawn = require('child_process').spawn;
-
 // For sending SDK commands to Tello
 const dgram = require('dgram');
-
 // HTTP and streaming ports
 const HTTP_PORT = 3000;
 const STREAM_PORT = 3001
@@ -48,32 +47,18 @@ export function observableFromSocket(socket) {
       subscriber.next([msg.toString(), info]);
     });
     socket.on("error", err => {
-      observer.error(err);
+      subscriber.error(err);
     });
     socket.on("close", () => {
-      observer.complete();
+      subscriber.complete();
     });
   });
 };
-
-
-
-
-
-
 
 /* 
   4. Send the command and streamon SDK commands to begin the Tello video stream.
   YOU MUST POWER UP AND CONNECT TO TELL BEFORE RUNNING THIS SCRIPT
 */
-
-
-
-
-
-
-
-
 
 class Tello {
   constructor() {
@@ -96,15 +81,21 @@ class Tello {
     this.state_data = {}
     this.udpServer = null
     this.udpClient = null
+    this.Client = null
 
     this.webServer = null
     this.streamServer = null
     this.webSocketServer = null
 
+    this.commandQueue = new Subject();
+
     this.testSubject = new Subject();
     this.testSubject.subscribe(
-      x => {console.log("value received:", x)
-    },
+      msg => {
+        console.log("value received:", msg)
+        this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+
+      },
       err => console.error('subject got an error: ' + err),
       () => console.log('subject got a complete notification'),
     )
@@ -124,8 +115,9 @@ class Tello {
     })
 
     this.state_data = dict;
-    //console.log(this.state_data);
+    // console.log(this.state_data);
   }
+
 
 
   /*
@@ -221,6 +213,7 @@ class Tello {
     }, 3000);
   }
 
+  
   init() {
     this.udpServer = dgram.createSocket('udp4');
     this.udpServer.bind(this.TELLO_STATE_PORT);
@@ -241,25 +234,75 @@ class Tello {
     // Send command
 
 
-    const Client = observableFromSocket(this.udpClient);
-    Client.subscribe(
-      x => console.log(x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+    
+    this.Client = observableFromSocket(this.udpClient);
+    this.Client.subscribe(
+      x => console.log("ju", x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
       err => console.error('Observer got an error: ' + err),
-      () => console.log('Observer got a complete notification'),
+      () => console.log('Observer got a complete notification')
     )
+    //this.udpClient.send("command", this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    this.testSubject.next("command");
 
-    this.command()
+   // this.command()
     this.streamon()
+    
   }
 
 
 
-  send_command_with_return(msg) {
+  async send_command_with_return(msg) {
+
+    // let commandObs =  of(msg);
+    // this.commandQueue.next(commandObs)
+
+
+    //https://runkit.com/boxofrox/rxjs-queue
+    //https://stackoverflow.com/questions/33586412/implementing-udp-command-acknowledge-communication-protocol-in-node-js-and-types
     //here i will use subjects to add values and send them to the drone
     //https://stackoverflow.com/questions/33324227/rxjs-how-would-i-manually-update-an-observable
-    
-    this.testSubject.next(msg);
-    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+
+    let parentobject = this;
+
+    let zeroTime = timestamp();
+    const now = () => numeral((timestamp() - zeroTime) / 10E3).format('0.0000');
+
+   
+
+    const asyncTask = (data) =>
+      new Observable((obs) => {
+        // I return a new observable.  This block won't run until a subscription is made... I think.
+        console.log(`${now()}: starting async task ${data}`);
+
+        // simulate sending a request that takes 1 second to respond.
+        parentobject.Client.pipe(take(1)).subscribe(
+          dataa => {
+            
+            obs.next(data);
+            this.testSubject.next(data);
+            console.log(`${now()}: end of async task ${data}`);
+            obs.complete();
+          },
+          err => console.error('Observer got an error: ' + err),
+          () => console.log('iujeijezfhnijrhgiofu'),
+        );
+      });
+
+
+    let p = this.commandQueue.pipe(
+      concatMap(asyncTask))   // convert sequence into array so tonic dev prints a nice value when promise resolves.
+      .toPromise(P)       // convert to promise for tonicdev await hack.
+
+    console.log("example 2: start filling queue");
+    zeroTime = timestamp();
+    this.commandQueue.next(msg)
+    //["takeoff", "flip f", "land", "temp?"].forEach(a => parentobject.commandQueue.next(a));
+    this.commandQueue.complete();  // only needed here to resolve promise for hack.
+
+    await p;
+
+    // this.testSubject.next(msg);
+
   }
 
   send_simple_command(msg) {
@@ -506,22 +549,15 @@ let tello = new Tello();
 tello.init();
 
 tello.start_web_server();
-setTimeout(function () {
-  tello.takeoff();
-}, 3000)
-setTimeout(function () {
-  tello.rotate_clockwise(90);
-}, 10000)
-setTimeout(function () {
-  tello.land();
-}, 15000)
+ tello.takeoff();
+ tello.rotate_clockwise(90);
+ tello.land();
+ 
 
 
-
-
-// console.log(`Please enter a command:`);
-// rl.on("line", (line) => {
-//   console.log(tello.state_data)
-// });
+console.log(`Please enter a command:`);
+rl.on("line", (line) => {
+  tello.send_simple_command("height?")
+});
 
 
