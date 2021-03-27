@@ -1,6 +1,6 @@
-import { Observable, from, Subject } from "rxjs";
-import { map, filter, concatMap, scan, take } from "rxjs/operators";
-
+import { Observable, from, Subject, timer } from "rxjs";
+import { tap, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
+//import { log } from "./helpers";
 const timestamp = require("performance-now");
 const numeral = require("numeral");
 const P = require("bluebird");
@@ -23,14 +23,42 @@ export function observableFromSocket(socket) {
   });
 }
 
+export function log(description = '', badgeColor = 'darkCyan') {
+  const badge = color => `background:${color}; color:white; padding:4px; margin-right:4px; border-radius:3px; font-size:9px;`;
+
+  return tap({
+    next:  value => console.log(`%c${description}: ${value}`,  badge(badgeColor),  value),
+    error: error => console.log(`%c${description} (error)`,    badge('fireBrick'), error),
+    complete: () => console.log(`%c${description} (complete)`, badge('slateGray'))
+  });
+}
+
+class TelloService {
+  commandQueue$ = new Subject();
+
+  constructor(telloClient) {
+    this.commandQueue$
+      .pipe(
+        log("added to queue >>", "slateGray"),
+        concatMap(command => telloClient.testSubject.next(command)),
+        log("DONE", "darkOrange")
+      )
+      .subscribe();
+  }
+
+  sendCommand(command) {
+    return timer(1500)
+      .pipe(mapTo(command))
+      .toPromise();
+  }
+}
+
 class Tello {
   constructor() {
 
     this.udpServer = null;
     this.udpClient = null;
     this.Client = null;
-
-    this.commandQueue = new Subject();
 
     this.testSubject = new Subject();
     this.testSubject.subscribe(
@@ -50,21 +78,13 @@ class Tello {
     // emits on new datagram msg
     server.on("message", function(msg, info) {
       console.log("Data received from client : " + msg.toString());
-      console.log(
-        "Received %d bytes from %s:%d\n",
-        msg.length,
-        info.address,
-        info.port
-      );
 
       //sending msg
       setTimeout(function() {
         server.send("ok", info.port, "localhost", function(error) {
           if (error) {
             client.close();
-          } else {
-            console.log("Data sent !!!");
-          }
+          } 
         });
       }, 3000);
     });
@@ -75,51 +95,19 @@ class Tello {
 
     this.Client = observableFromSocket(this.udpClient);
     this.Client.subscribe(
-      x => console.log(x), // this prints the response from the drone after a command has been sent (ok or error)
+      x => console.log("respone from drone is:", x), // this prints the response from the drone after a command has been sent (ok or error)
       err => console.error("Observer got an error: " + err),
       () => console.log("Observer got a complete notification")
     );
 
-    this.testSubject.next("command"); /*currently sending first command manually 
-                                        this command should always be send first before any other*/
+    //this.testSubject.next("command"); /*currently sending first command manually 
+    //                                    this command should always be send first before any other*/
     //this.command()
-    this.streamon();
+    //this.streamon();
   }
 
   async send_command_with_return(msg) {
-    let parentobject = this;
-
-    let zeroTime = timestamp();
-    const now = () => numeral((timestamp() - zeroTime) / 10e3).format("0.0000");
-
-    const asyncTask = data =>
-      new Observable(obs => {
-        // I return a new observable.  This block won't run until a subscription is made... I think.
-        console.log(`${now()}: starting async task ${data}`);
-
-        // simulate sending a request that takes 1 second to respond.
-        parentobject.Client.pipe(take(1)).subscribe(
-          dataa => {
-            obs.next(data);
-            this.testSubject.next(data);
-            console.log(`${now()}: end of async task ${data}`);
-            obs.complete();
-          },
-          err => console.error("Observer got an error: " + err),
-          () => console.log("observer asynctask finished")
-        );
-      });
-
-    let p = this.commandQueue.pipe(concatMap(asyncTask)).toPromise(P); //commandQueue is a subject in the constructor
-
-    console.log("example 2: start filling queue");
-    zeroTime = timestamp();
-    //this.commandQueue.next(msg);
-    ["streamon", "streamoff", "height?", "temp?"].forEach(a => this.commandQueue.next(a));
-
-    await p;
-
-    // this.testSubject.next(msg);
+   return  this.testSubject.next(msg).toPromise();
   }
 
   streamon() {
@@ -140,9 +128,47 @@ class Tello {
 }
 
 let tello = new Tello();
+let service = new TelloService(tello);
 tello.init();
 
-// tello.streamon();
-// tello.streamoff();
+ service.sendCommand('streamon');
+ service.sendCommand('stremoff');
 // tello.get_speed();
 // tello.get_battery();
+
+
+
+
+// let parentobject = this;
+
+// let zeroTime = timestamp();
+// const now = () => numeral((timestamp() - zeroTime) / 10e3).format("0.0000");
+
+// const asyncTask = data =>
+//   new Observable(obs => {
+//     console.log(`${now()}: starting async task ${data}`);
+
+    
+//     parentobject.Client.pipe(take(1)).subscribe(
+//       dataa => {
+//         console.log("loool")
+//         obs.next(data);
+//         this.testSubject.next(data);
+//         console.log(`${now()}: end of async task ${data}`);
+//         obs.complete();
+//       },
+//       err => console.error("Observer got an error: " + err),
+//       () => console.log("observer asynctask finished with " + data + "\n")
+//     );
+//   });
+
+// let p = this.commandQueue.pipe(concatMap(asyncTask)).toPromise(P); //commandQueue is a subject in the constructor
+
+// console.log("start filling queue with " + msg);
+// zeroTime = timestamp();
+// this.commandQueue.next(msg);
+// //["streamon", "streamoff", "height?", "temp?"].forEach(a => this.commandQueue.next(a));
+
+// await p;
+
+// // this.testSubject.next(msg);

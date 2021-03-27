@@ -2,7 +2,7 @@
   "name": "Bachelorproef",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "test.js",
   "scripts": {
     "start": "node -r esm src/test.js",
     "test": "echo \"Error: no test specified\" && exit 1"
