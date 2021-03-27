@@ -1,9 +1,8 @@
-import { Observable, from, Subject, timer } from "rxjs";
+import { Observable, from, Subject, timer, EMPTY } from "rxjs";
 import { tap, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
 //import { log } from "./helpers";
 const timestamp = require("performance-now");
 const numeral = require("numeral");
-const P = require("bluebird");
 
 // For sending SDK commands to Tello
 const udp = require("dgram");
@@ -11,7 +10,7 @@ const udp = require("dgram");
 /* code to make our own observable from a socket */
 export function observableFromSocket(socket) {
   return new Observable(function subscribe(subscriber) {
-    socket.on("message", function(msg, info) {
+    socket.on("message", function (msg, info) {
       subscriber.next([msg.toString(), info]);
     });
     socket.on("error", err => {
@@ -27,8 +26,8 @@ export function log(description = '', badgeColor = 'darkCyan') {
   const badge = color => `background:${color}; color:white; padding:4px; margin-right:4px; border-radius:3px; font-size:9px;`;
 
   return tap({
-    next:  value => console.log(`%c${description}: ${value}`,  badge(badgeColor),  value),
-    error: error => console.log(`%c${description} (error)`,    badge('fireBrick'), error),
+    next: value => console.log(`%c${description}: ${value}`, badge(badgeColor), value),
+    error: error => console.log(`%c${description} (error)`, badge('fireBrick'), error),
     complete: () => console.log(`%c${description} (complete)`, badge('slateGray'))
   });
 }
@@ -36,20 +35,19 @@ export function log(description = '', badgeColor = 'darkCyan') {
 class TelloService {
   commandQueue$ = new Subject();
 
+
   constructor(telloClient) {
     this.commandQueue$
       .pipe(
         log("added to queue >>", "slateGray"),
-        concatMap(command => telloClient.testSubject.next(command)),
+        concatMap(command => telloClient.send_command_with_return(command)),
         log("DONE", "darkOrange")
       )
       .subscribe();
   }
 
   sendCommand(command) {
-    return timer(1500)
-      .pipe(mapTo(command))
-      .toPromise();
+    this.commandQueue$.next(command);
   }
 }
 
@@ -59,11 +57,13 @@ class Tello {
     this.udpServer = null;
     this.udpClient = null;
     this.Client = null;
+    this.Occupied = false;
 
     this.testSubject = new Subject();
     this.testSubject.subscribe(
       msg => {
         console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
+        this.Occupied = true;
         this.udpClient.send(msg, 2222, "localhost", null);
       },
       err => console.error("subject got an error: " + err),
@@ -76,15 +76,15 @@ class Tello {
     var server = udp.createSocket("udp4");
 
     // emits on new datagram msg
-    server.on("message", function(msg, info) {
+    server.on("message", function (msg, info) {
       console.log("Data received from client : " + msg.toString());
 
       //sending msg
-      setTimeout(function() {
-        server.send("ok", info.port, "localhost", function(error) {
+      setTimeout(function () {
+        server.send("ok", info.port, "localhost", function (error) {
           if (error) {
             client.close();
-          } 
+          }
         });
       }, 3000);
     });
@@ -95,7 +95,10 @@ class Tello {
 
     this.Client = observableFromSocket(this.udpClient);
     this.Client.subscribe(
-      x => console.log("respone from drone is:", x), // this prints the response from the drone after a command has been sent (ok or error)
+      x => {
+        this.Occupied = false
+        console.log("respone from drone is:", x)
+      }, // this prints the response from the drone after a command has been sent (ok or error)
       err => console.error("Observer got an error: " + err),
       () => console.log("Observer got a complete notification")
     );
@@ -106,8 +109,30 @@ class Tello {
     //this.streamon();
   }
 
-  async send_command_with_return(msg) {
-   return  this.testSubject.next(msg).toPromise();
+  send_command_with_return(msg) {
+    let parentobject = this;
+
+    let zeroTime = timestamp();
+    const now = () => numeral((timestamp() - zeroTime) / 10e3).format("0.0000");
+
+    if (this.Occupied) {
+      return new Observable(obs => {
+        parentobject.Client.pipe(take(1)).subscribe(
+          dataa => {
+            obs.next(msg);
+            this.testSubject.next(msg);
+            obs.complete();
+          },
+          err => console.error("Observer got an error: " + err),
+          () => console.log("observer finished with " + msg + "\n")
+        );
+      }).toPromise();
+    }
+    else {
+      this.Occupied = false;
+      parentobject.testSubject.next(msg);
+      return EMPTY;
+    }
   }
 
   streamon() {
@@ -131,10 +156,28 @@ let tello = new Tello();
 let service = new TelloService(tello);
 tello.init();
 
- service.sendCommand('streamon');
- service.sendCommand('stremoff');
-// tello.get_speed();
-// tello.get_battery();
+
+service.sendCommand('streamon');
+service.sendCommand('streamoff');
+
+setTimeout(function () {
+  service.sendCommand('battery?');
+  service.sendCommand('speed?');
+}, 20000)
+
+
+// return new Observable(obs => {
+//   parentobject.Client.pipe(take(1)).subscribe(
+//     dataa => {
+//       obs.next(msg);
+//       this.testSubject.next(msg);
+//       obs.complete();
+//     },
+//     err => console.error("Observer got an error: " + err),
+//     () => console.log("observer asynctask finished with " + msg + "\n")
+//   );
+// }).toPromise();
+// }
 
 
 
@@ -148,7 +191,7 @@ tello.init();
 //   new Observable(obs => {
 //     console.log(`${now()}: starting async task ${data}`);
 
-    
+
 //     parentobject.Client.pipe(take(1)).subscribe(
 //       dataa => {
 //         console.log("loool")

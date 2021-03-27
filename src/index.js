@@ -11,8 +11,8 @@
 
 // Import necessary modules for the project
 
-import { Observable, from, Subject, } from 'rxjs';
-import { map, filter, concatMap, scan,  take } from 'rxjs/operators';
+import { Observable, from, Subject, timer, EMPTY } from "rxjs";
+import { tap, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
 
@@ -54,11 +54,269 @@ export function observableFromSocket(socket) {
     });
   });
 };
+export function log(description = '', badgeColor = 'darkCyan') {
+  const badge = color => `background:${color}; color:white; padding:4px; margin-right:4px; border-radius:3px; font-size:9px;`;
+
+  return tap({
+    next: value => console.log(`%c${description}: ${value}`, badge(badgeColor), value),
+    error: error => console.log(`%c${description} (error)`, badge('fireBrick'), error),
+    complete: () => console.log(`%c${description} (complete)`, badge('slateGray'))
+  });
+}
 
 /* 
   4. Send the command and streamon SDK commands to begin the Tello video stream.
   YOU MUST POWER UP AND CONNECT TO TELL BEFORE RUNNING THIS SCRIPT
 */
+
+class TelloService {
+  commandQueue$ = new Subject();
+
+  constructor(telloClient) {
+    this.telloClient = telloClient;
+    this.commandQueue$
+      .pipe(
+        log("added to queue >>", "slateGray"),
+        concatMap(command => telloClient.send_command_with_return(command)),
+        log("DONE", "darkOrange")
+      )
+      .subscribe();
+  }
+
+  sendCommand(command) {
+    this.commandQueue$.next(command);
+  }
+
+  send_simple_command(msg) {
+    this.telloClient.send_simple_command(msg)
+  }
+
+  get_state_field(key) {
+    console.log(this.telloClient.state_data);
+    console.log(key)
+    if (this.telloClient.state_data.hasOwnProperty(key)) {
+      console.log(this.telloClient.state_data[key])
+      return this.telloClient.state_data[key];
+    }
+    else {
+      console.log("error state isn't known, not in state_data")
+    }
+  }
+
+  takeoff() {
+    this.sendCommand("takeoff")
+    this.IS_FLYING = true
+  }
+
+  land() {
+    this.sendCommand("land")
+    this.IS_FLYING = false
+  }
+
+  command() {
+    this.sendCommand("command")
+  }
+
+  streamon() {
+    this.sendCommand("streamon")
+    this.STREAM_ON = true
+  }
+  streamoff() {
+    this.sendCommand("streamoff")
+    this.STREAM_ON = false
+  }
+
+  emergency() {
+    this.sendCommand("emergency")
+  }
+
+  move(direction, distance) {
+    this.sendCommand(`${direction} ${distance}`)
+  }
+
+  move_up(distance) {
+    this.move("up", distance)
+  }
+
+  move_down(distance) {
+    this.move("down", distance)
+  }
+
+  move_left(distance) {
+    this.move("left", distance)
+  }
+
+  move_right(distance) {
+    this.move("right", distance)
+  }
+
+  move_forward(distance) {
+    this.move("forward", distance)
+  }
+  move_back(distance) {
+    this.move("back", distance)
+  }
+
+  rotate_clockwise(degree) {
+    this.sendCommand(`cw ${degree}`)
+  }
+
+  rotate_counter_clockwise(degree) {
+    this.sendCommand(`ccw ${degree}`)
+  }
+
+  flip(direction) {
+    this.sendCommand(`flip ${direction}`)
+  }
+
+  flip_left() {
+    this.flip("l")
+  }
+
+  flip_right() {
+    this.flip("r")
+  }
+
+  flip_forward() {
+    this.flip("f")
+  }
+
+  flip_back() {
+    this.flip("b")
+  }
+
+  go_xyz_speed(x, y, z, speed) {
+    this.sendCommand(`go ${x} ${y} ${z} ${speed}`)
+  }
+
+  curve_xyz_speed(x1, y1, z1, x2, y2, z2, speed) {
+    this.sendCommand(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed}`)
+  }
+
+  go_xyz_speed_mid(x, y, z, speed, mid) {
+    this.sendCommand(`go ${x} ${y} ${z} ${speed} m${mid}`)
+  }
+
+  curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid) {
+    this.sendCommand(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed} m${mid}`)
+  }
+
+  go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2) {
+    this.sendCommand(`jump ${x} ${y} ${z} ${speed} ${yaw} m${mid1} m${mid2}`)
+  }
+
+  enable_mission_pads() {
+    this.sendCommand("mon")
+  }
+
+  disable_mission_pads() {
+    this.sendCommand("moff")
+  }
+
+  set_mission_pad_detection_direction(direction) {
+    this.sendCommand(`mdirection ${direction}`)
+  }
+
+  set_speed(speed) {
+    this.sendCommand(`speed ${speed}`)
+  }
+
+  send_rc_control() {
+    console.log("not yet implemented")
+  }
+
+  set_wifi_credentials(ssid, password) {
+    this.send_simple_command(`wifi ${ssid} ${password}`)
+  }
+
+  connect_to_wifi(ssid, password) {
+    this.send_simple_command(`ap ${ssid} ${password}`)
+  }
+
+  get_speed() {
+    this.sendCommand('speed?')
+  }
+
+  get_mission_pad_id() {
+    this.get_state_field('mid')
+  }
+
+  get_mission_pad_distance_x() {
+    this.get_state_field('x')
+  }
+
+  get_mission_pad_distance_y() {
+    this.get_state_field('y')
+  }
+
+  get_mission_pad_distance_z() {
+    this.get_state_field('z')
+  }
+
+  get_pitch() {
+    this.get_state_field('pitch')
+  }
+
+  get_roll() {
+    this.get_state_field('roll')
+  }
+
+  get_yaw() {
+    this.get_state_field('yaw')
+  }
+
+  get_Xspeed() {
+    this.get_state_field('vgx')
+  }
+
+  get_Yspeed() {
+    this.get_state_field('vgy')
+  }
+
+  get_Zspeed() {
+    this.get_state_field('vgz')
+  }
+
+  get_lowest_temp() {
+    this.get_state_field('templ')
+  }
+
+  get_highest_temp() {
+    this.get_state_field('temph')
+  }
+
+  get_time_of_flight() {
+    this.get_state_field('tof')
+  }
+
+  get_height() {
+    this.get_state_field('h')
+  }
+
+  get_battery_percentage() {
+    this.get_state_field('bat')
+  }
+
+  get_barometer() {
+    this.get_state_field('baro')
+  }
+
+  get_motor_time() {
+    this.get_state_field('time')
+  }
+
+  get_Xacceleration() {
+    this.get_state_field('agx')
+  }
+
+  get_Yacceleration() {
+    this.get_state_field('agy')
+  }
+
+  get_Zacceleration() {
+    this.get_state_field('agz')
+  }
+}
 
 class Tello {
   constructor() {
@@ -82,24 +340,24 @@ class Tello {
     this.udpServer = null
     this.udpClient = null
     this.Client = null
+    this.Occupied = false
 
     this.webServer = null
     this.streamServer = null
     this.webSocketServer = null
 
-    this.commandQueue = new Subject();
-
     this.testSubject = new Subject();
     this.testSubject.subscribe(
       msg => {
-        console.log("value received:", msg)
+        console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
+        this.Occupied = true;
         this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
-
       },
-      err => console.error('subject got an error: ' + err),
-      () => console.log('subject got a complete notification'),
-    )
+      err => console.error("subject got an error: " + err),
+      () => console.log("subject got a complete notification")
+    );
   }
+
   //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
 
   parse_state_data(data) {
@@ -115,10 +373,8 @@ class Tello {
     })
 
     this.state_data = dict;
-    // console.log(this.state_data);
+    console.log(res);
   }
-
-
 
   /*
   1. Create the web server that the user can access at
@@ -213,7 +469,7 @@ class Tello {
     }, 3000);
   }
 
-  
+
   init() {
     this.udpServer = dgram.createSocket('udp4');
     this.udpServer.bind(this.TELLO_STATE_PORT);
@@ -229,335 +485,65 @@ class Tello {
     };
     Server.subscribe(observer)
 
-
-    // These send commands could be smarter by waiting for the SDK to respond with 'ok' and handling errors
-    // Send command
-
-
-    
     this.Client = observableFromSocket(this.udpClient);
     this.Client.subscribe(
-      x => console.log("ju", x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+      x => {
+        this.Occupied = false
+        console.log("respone from drone is:", x)
+      },
       err => console.error('Observer got an error: ' + err),
       () => console.log('Observer got a complete notification')
     )
-    //this.udpClient.send("command", this.TELLO_SEND_PORT, this.TELLO_IP, null);
-    this.testSubject.next("command");
-
-   // this.command()
-    this.streamon()
-    
   }
 
 
 
-  async send_command_with_return(msg) {
-
-    // let commandObs =  of(msg);
-    // this.commandQueue.next(commandObs)
-
-
-    //https://runkit.com/boxofrox/rxjs-queue
-    //https://stackoverflow.com/questions/33586412/implementing-udp-command-acknowledge-communication-protocol-in-node-js-and-types
-    //here i will use subjects to add values and send them to the drone
-    //https://stackoverflow.com/questions/33324227/rxjs-how-would-i-manually-update-an-observable
-
+  send_command_with_return(msg) {
     let parentobject = this;
 
     let zeroTime = timestamp();
-    const now = () => numeral((timestamp() - zeroTime) / 10E3).format('0.0000');
+    const now = () => numeral((timestamp() - zeroTime) / 10e3).format("0.0000");
 
-   
-
-    const asyncTask = (data) =>
-      new Observable((obs) => {
-        // I return a new observable.  This block won't run until a subscription is made... I think.
-        console.log(`${now()}: starting async task ${data}`);
-
-        // simulate sending a request that takes 1 second to respond.
+    if (this.Occupied) {
+      return new Observable(obs => {
         parentobject.Client.pipe(take(1)).subscribe(
           dataa => {
-            
-            obs.next(data);
-            this.testSubject.next(data);
-            console.log(`${now()}: end of async task ${data}`);
+            obs.next(msg);
+            this.testSubject.next(msg);
             obs.complete();
           },
-          err => console.error('Observer got an error: ' + err),
-          () => console.log('iujeijezfhnijrhgiofu'),
+          err => console.error("Observer got an error: " + err),
+          () => console.log("observer finished with " + msg + "\n")
         );
-      });
-
-
-    let p = this.commandQueue.pipe(
-      concatMap(asyncTask))   // convert sequence into array so tonic dev prints a nice value when promise resolves.
-      .toPromise(P)       // convert to promise for tonicdev await hack.
-
-    console.log("example 2: start filling queue");
-    zeroTime = timestamp();
-    this.commandQueue.next(msg)
-    //["takeoff", "flip f", "land", "temp?"].forEach(a => parentobject.commandQueue.next(a));
-    this.commandQueue.complete();  // only needed here to resolve promise for hack.
-
-    await p;
-
-    // this.testSubject.next(msg);
-
+      }).toPromise();
+    }
+    else {
+      parentobject.testSubject.next(msg);
+      return EMPTY;
+    }
   }
 
   send_simple_command(msg) {
-    this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
+    this.testSubject.next(msg);
   }
-
-  send_read_command(cmd) {
-    this.send_command_with_return(cmd)
-  }
-
-  send_control_command(cmd) {
-    this.send_command_with_return(cmd)
-  }
-
-  get_state_field(key) {
-    console.log(this.state_data);
-    console.log(key)
-    if (this.state_data.hasOwnProperty(key)) {
-      console.log(this.state_data[key])
-      return this.state_data[key];
-    }
-    else {
-      console.log("error state isn't known, not in state_data")
-    }
-  }
-
-  takeoff() {
-    this.send_control_command("takeoff")
-    this.IS_FLYING = true
-  }
-
-  land() {
-    this.send_control_command("land")
-    this.IS_FLYING = false
-  }
-
-  command() {
-    this.send_control_command("command")
-  }
-
-  streamon() {
-    this.send_control_command("streamon")
-    this.STREAM_ON = true
-  }
-  streamoff() {
-    this.send_control_command("streamoff")
-    this.STREAM_ON = false
-  }
-
-  emergency() {
-    this.send_control_command("emergency")
-  }
-
-  move(direction, distance) {
-    this.send_control_command(`${direction} ${distance}`)
-  }
-
-  move_up(distance) {
-    this.move("up", distance)
-  }
-
-  move_down(distance) {
-    this.move("down", distance)
-  }
-
-  move_left(distance) {
-    this.move("left", distance)
-  }
-
-  move_right(distance) {
-    this.move("right", distance)
-  }
-
-  move_forward(distance) {
-    this.move("forward", distance)
-  }
-  move_back(distance) {
-    this.move("back", distance)
-  }
-
-  rotate_clockwise(degree) {
-    this.send_control_command(`cw ${degree}`)
-  }
-
-  rotate_counter_clockwise(degree) {
-    this.send_control_command(`ccw ${degree}`)
-  }
-
-  flip(direction) {
-    this.send_control_command(`flip ${direction}`)
-  }
-
-  flip_left() {
-    this.flip("l")
-  }
-
-  flip_right() {
-    this.flip("r")
-  }
-
-  flip_forward() {
-    this.flip("f")
-  }
-
-  flip_back() {
-    this.flip("b")
-  }
-
-  go_xyz_speed(x, y, z, speed) {
-    this.send_control_command(`go ${x} ${y} ${z} ${speed}`)
-  }
-
-  curve_xyz_speed(x1, y1, z1, x2, y2, z2, speed) {
-    this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed}`)
-  }
-
-  go_xyz_speed_mid(x, y, z, speed, mid) {
-    this.send_control_command(`go ${x} ${y} ${z} ${speed} m${mid}`)
-  }
-
-  curve_xyz_speed_mid(x1, y1, z1, x2, y2, z2, speed, mid) {
-    this.send_control_command(`go ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${speed} m${mid}`)
-  }
-
-  go_xyz_speed_yaw_mid(x, y, z, speed, yaw, mid1, mid2) {
-    this.send_control_command(`jump ${x} ${y} ${z} ${speed} ${yaw} m${mid1} m${mid2}`)
-  }
-
-  enable_mission_pads() {
-    this.send_control_command("mon")
-  }
-
-  disable_mission_pads() {
-    this.send_control_command("moff")
-  }
-
-  set_mission_pad_detection_direction(direction) {
-    this.send_control_command(`mdirection ${direction}`)
-  }
-
-  set_speed(speed) {
-    this.send_control_command(`speed ${speed}`)
-  }
-
-  send_rc_control() {
-    console.log("not yet implemented")
-  }
-
-  set_wifi_credentials(ssid, password) {
-    this.send_simple_command(`wifi ${ssid} ${password}`)
-  }
-
-  connect_to_wifi(ssid, password) {
-    this.send_simple_command(`ap ${ssid} ${password}`)
-  }
-
-  get_speed() {
-    this.send_read_command('speed?')
-  }
-
-  get_mission_pad_id() {
-    this.get_state_field('mid')
-  }
-
-  get_mission_pad_distance_x() {
-    this.get_state_field('x')
-  }
-
-  get_mission_pad_distance_y() {
-    this.get_state_field('y')
-  }
-
-  get_mission_pad_distance_z() {
-    this.get_state_field('z')
-  }
-
-  get_pitch() {
-    this.get_state_field('pitch')
-  }
-
-  get_roll() {
-    this.get_state_field('roll')
-  }
-
-  get_yaw() {
-    this.get_state_field('yaw')
-  }
-
-  get_Xspeed() {
-    this.get_state_field('vgx')
-  }
-
-  get_Yspeed() {
-    this.get_state_field('vgy')
-  }
-
-  get_Zspeed() {
-    this.get_state_field('vgz')
-  }
-
-  get_lowest_temp() {
-    this.get_state_field('templ')
-  }
-
-  get_highest_temp() {
-    this.get_state_field('temph')
-  }
-
-  get_time_of_flight() {
-    this.get_state_field('tof')
-  }
-
-  get_height() {
-    this.get_state_field('h')
-  }
-
-  get_battery_percentage() {
-    this.get_state_field('bat')
-  }
-
-  get_barometer() {
-    this.get_state_field('baro')
-  }
-
-  get_motor_time() {
-    this.get_state_field('time')
-  }
-
-  get_Xacceleration() {
-    this.get_state_field('agx')
-  }
-
-  get_Yacceleration() {
-    this.get_state_field('agy')
-  }
-
-  get_Zacceleration() {
-    this.get_state_field('agz')
-  }
-
 }
 
 let tello = new Tello();
+let service = new TelloService(tello);
 tello.init();
-
 tello.start_web_server();
- tello.takeoff();
- tello.rotate_clockwise(90);
- tello.land();
- 
+
+service.command();
+// service.takeoff()
+// service.rotate_clockwise(90);
+// service.rotate_counter_clockwise(180);
+// service.get_pitch();
+// service.land();
 
 
-console.log(`Please enter a command:`);
-rl.on("line", (line) => {
-  tello.send_simple_command("height?")
-});
+// console.log(`Please enter a command:`);
+// rl.on("line", (line) => {
+//   tello.send_simple_command("height?")
+// });
 
 
