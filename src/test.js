@@ -62,9 +62,10 @@ class Tello {
     this.testSubject = new Subject();
     this.testSubject.subscribe(
       msg => {
-        console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
+        
         this.Occupied = true;
         this.udpClient.send(msg, 2222, "localhost", null);
+        console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
       },
       err => console.error("subject got an error: " + err),
       () => console.log("subject got a complete notification")
@@ -91,7 +92,7 @@ class Tello {
     server.bind(2222);
 
     this.udpClient = udp.createSocket("udp4");
-    this.udpClient.bind(this.TELLO_SEND_PORT);
+    this.udpClient.bind(2223);
 
     this.Client = observableFromSocket(this.udpClient);
     this.Client.subscribe(

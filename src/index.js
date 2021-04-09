@@ -11,7 +11,7 @@
 
 // Import necessary modules for the project
 
-import { Observable, from, Subject, timer, EMPTY } from "rxjs";
+import { Observable, from, Subject, BehaviorSubject, timer, EMPTY } from "rxjs";
 import { tap, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
@@ -336,7 +336,29 @@ class Tello {
     this.TIME_BTW_COMMANDS = 0.1 //# in seconds
     this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
     this.RETRY_COUNT = 3  // number of retries after a failed command
-    this.state_data = {}
+    this.state_data = {
+      mid: null,
+      x: null,
+      y: null,
+      z: null,
+      mpry: null,
+      pitch: null,
+      roll: null,
+      yaw: null,
+      vgx: null,
+      vgy: null,
+      vgz: null,
+      templ: null,
+      temph: null,
+      tof: null,
+      h: null,
+      bat: null,
+      baro: null,
+      time: null,
+      agx: null,
+      agy: null,
+      agz: null
+    }
     this.udpServer = null
     this.udpClient = null
     this.Client = null
@@ -363,17 +385,17 @@ class Tello {
   parse_state_data(data) {
     let state = data[0].trim();
     let additional_info = data[1];
-    let dict = {};
+    let parentObject = this;
     let res = state.split(";")
     res.forEach(function (el) {
       if (el.length > 1) {
         var x = el.split(":")
-        dict[x[0]] = parseFloat(x[1]);
+        parentObject.state_data[x[0]].next(parseFloat(x[1]));
       }
     })
 
-    this.state_data = dict;
-    console.log(res);
+    //this.state_data = dict;
+    //console.log(res);
   }
 
   /*
@@ -469,7 +491,17 @@ class Tello {
     }, 3000);
   }
 
-
+  test(){
+    for (const [key, value] of Object.entries(this.state_data)) {
+      this.state_data[key].subscribe({
+        next: value => value,
+        error: err => console.error('Observer got an error: ' + err),
+        complete: () => console.log('Observer got a complete notification')
+      })  
+  }
+    
+  }
+////////////////////////////////////////////////////////behavioursubject///////////////////////////////
   init() {
     this.udpServer = dgram.createSocket('udp4');
     this.udpServer.bind(this.TELLO_STATE_PORT);
@@ -479,7 +511,7 @@ class Tello {
 
     const Server = observableFromSocket(this.udpServer);
     const observer = {
-      next: x => this.parse_state_data(x),//console.log('Observer got a next value: ' + x[0] +'Received %f bytes from %s:%d\n', x[1].size, x[1].address, x[1].port),
+      next: x => this.parse_state_data(x),
       error: err => console.error('Observer got an error: ' + err),
       complete: () => console.log('Observer got a complete notification')
     };
@@ -494,7 +526,12 @@ class Tello {
       err => console.error('Observer got an error: ' + err),
       () => console.log('Observer got a complete notification')
     )
+
+    for (const [key, value] of Object.entries(this.state_data)) {
+      this.state_data[key] = new BehaviorSubject()  
   }
+  console.log(this.state_data)
+}
 
 
 
@@ -534,10 +571,13 @@ tello.init();
 tello.start_web_server();
 
 service.command();
+setTimeout(function () {
+  tello.test();
+  service.get_Xspeed();
+}, 5000)
 // service.takeoff()
 // service.rotate_clockwise(90);
 // service.rotate_counter_clockwise(180);
-// service.get_pitch();
 // service.land();
 
 
