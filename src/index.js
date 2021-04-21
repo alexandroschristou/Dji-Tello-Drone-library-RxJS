@@ -93,8 +93,7 @@ class TelloService {
 
   get_state_field(key) {
     if (this.telloClient.state_data.hasOwnProperty(key)) {
-      console.log(key);
-      this.telloClient.state_data[key].subscribe(val => {
+        this.telloClient.state_data[key].subscribe(val => {
         console.log("value for key: " + key + " is " + val);
       })
       return this.telloClient.state_data[key];
@@ -251,6 +250,7 @@ class TelloService {
   }
 
   get_mission_pad_distance_z() {
+    
     this.get_state_field('z')
   }
 
@@ -316,6 +316,12 @@ class TelloService {
 
   get_Zacceleration() {
     this.get_state_field('agz')
+  }
+
+  test2(first, second, third){
+    first.call(this);
+    second.call(this);
+    third.call(this);
   }
 
   test() {
@@ -435,7 +441,7 @@ class Tello {
     let parentObject = this;
     parentObject.webServer = http.createServer(function (request, response) {
 
-      // Log that an http connection has come through
+      // console.log that an http connection has come through
       console.log(
         'HTTP Connection on ' + HTTP_PORT + ' from: ' +
         request.socket.remoteAddress + ':' +
@@ -461,7 +467,7 @@ class Tello {
     parentObject.streamServer = http.createServer(function (request, response) {
 
 
-      // Log that a stream connection has come through
+      // console.log that a stream connection has come through
       console.log(
         'Stream Connection on ' + STREAM_PORT + ' from: ' +
         request.socket.remoteAddress + ':' +
@@ -588,21 +594,22 @@ class Tello {
 let tello = new Tello();
 let service = new TelloService(tello);
 tello.init();
-tello.start_web_server();
+//tello.start_web_server();
 
 service.command();
 service.streamon();
-service.enable_mission_pads();
-service.takeoff()
+//service.enable_mission_pads();
+//service.takeoff()
 //service.move_up(50)
 //service.go_xyz_speed_mid(20, 20, 130, 20, 4);
 
-   service.test()
+//service.test()
 
-setTimeout(function () {
-  service.land();
-}, 20000)
+// setTimeout(function () {
+//   service.land();
+// }, 20000)
 
+service.test2(service.get_height, service.get_highest_temp, service.get_lowest_temp)
 
 // service.takeoff()
 // service.rotate_clockwise(90);
