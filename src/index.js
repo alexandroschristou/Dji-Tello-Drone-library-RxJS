@@ -93,10 +93,11 @@ class TelloService {
 
   get_state_field(key) {
     if (this.telloClient.state_data.hasOwnProperty(key)) {
-        this.telloClient.state_data[key].subscribe(val => {
+      this.telloClient.state_data[key].subscribe(val => {
         console.log("value for key: " + key + " is " + val);
+        return this.telloClient.state_data[key];
       })
-      return this.telloClient.state_data[key];
+
     }
     else {
       console.log("error state isn't known, not in state_data")
@@ -250,7 +251,7 @@ class TelloService {
   }
 
   get_mission_pad_distance_z() {
-    
+
     this.get_state_field('z')
   }
 
@@ -318,7 +319,7 @@ class TelloService {
     this.get_state_field('agz')
   }
 
-  test2(first, second, third){
+  test2(first, second, third) {
     first.call(this);
     second.call(this);
     third.call(this);
@@ -610,6 +611,8 @@ service.streamon();
 // }, 20000)
 
 service.test2(service.get_height, service.get_highest_temp, service.get_lowest_temp)
+tello.state_data.h.next(2);
+
 
 // service.takeoff()
 // service.rotate_clockwise(90);
