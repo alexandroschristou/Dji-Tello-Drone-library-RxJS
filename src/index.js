@@ -12,7 +12,7 @@
 // Import necessary modules for the project
 
 import { Observable, from, Subject, BehaviorSubject, timer, EMPTY } from "rxjs";
-import { tap, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
+import { tap, map, distinctUntilChanged, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
 
@@ -92,10 +92,11 @@ class TelloService {
   }
 
   get_state_field(key) {
-    console.log(this.telloClient.state_data);
-    console.log(key)
     if (this.telloClient.state_data.hasOwnProperty(key)) {
-      console.log(this.telloClient.state_data[key])
+      console.log(key);
+      this.telloClient.state_data[key].subscribe(val => {
+        console.log("value for key: " + key + " is " + val);
+      })
       return this.telloClient.state_data[key];
     }
     else {
@@ -316,6 +317,34 @@ class TelloService {
   get_Zacceleration() {
     this.get_state_field('agz')
   }
+
+  test() {
+    this.telloClient.state_data.mid.
+      pipe(
+        distinctUntilChanged()
+      ).subscribe(
+        val => {
+          if (val == 1) {
+            this.move_right(40)
+            console.log("juuu")
+          }
+          else if (val == 2) {
+            this.move_forward(40)
+            console.log("juuu")
+          }
+          else if (val == 3) {
+            this.move_left(40)
+            console.log("juuu")
+          }
+          else if (val == 4) {
+            this.move_back(40)
+            console.log("looo")
+          }
+          else {
+            console.log("nub")
+          }
+        })
+  }
 }
 
 class Tello {
@@ -491,17 +520,8 @@ class Tello {
     }, 3000);
   }
 
-  test(){
-    for (const [key, value] of Object.entries(this.state_data)) {
-      this.state_data[key].subscribe({
-        next: value => value,
-        error: err => console.error('Observer got an error: ' + err),
-        complete: () => console.log('Observer got a complete notification')
-      })  
-  }
-    
-  }
-////////////////////////////////////////////////////////behavioursubject///////////////////////////////
+
+  ////////////////////////////////////////////////////////behavioursubject///////////////////////////////
   init() {
     this.udpServer = dgram.createSocket('udp4');
     this.udpServer.bind(this.TELLO_STATE_PORT);
@@ -528,30 +548,30 @@ class Tello {
     )
 
     for (const [key, value] of Object.entries(this.state_data)) {
-      this.state_data[key] = new BehaviorSubject()  
+      this.state_data[key] = new BehaviorSubject(null)
+    }
+    //console.log(this.state_data)
   }
-  console.log(this.state_data)
-}
 
 
 
   send_command_with_return(msg) {
     let parentobject = this;
 
-    let zeroTime = timestamp();
-    const now = () => numeral((timestamp() - zeroTime) / 10e3).format("0.0000");
-
     if (this.Occupied) {
       return new Observable(obs => {
-        parentobject.Client.pipe(take(1)).subscribe(
-          dataa => {
-            obs.next(msg);
-            this.testSubject.next(msg);
-            obs.complete();
-          },
-          err => console.error("Observer got an error: " + err),
-          () => console.log("observer finished with " + msg + "\n")
-        );
+        parentobject.Client
+          .pipe(
+            take(1))
+          .subscribe(
+            dataa => {
+              obs.next(msg);
+              this.testSubject.next(msg);
+              obs.complete();
+            },
+            err => console.error("Observer got an error: " + err),
+            () => console.log("observer finished with " + msg + "\n")
+          );
       }).toPromise();
     }
     else {
@@ -571,10 +591,19 @@ tello.init();
 tello.start_web_server();
 
 service.command();
+service.streamon();
+service.enable_mission_pads();
+service.takeoff()
+//service.move_up(50)
+//service.go_xyz_speed_mid(20, 20, 130, 20, 4);
+
+   service.test()
+
 setTimeout(function () {
-  tello.test();
-  service.get_Xspeed();
-}, 5000)
+  service.land();
+}, 20000)
+
+
 // service.takeoff()
 // service.rotate_clockwise(90);
 // service.rotate_counter_clockwise(180);
