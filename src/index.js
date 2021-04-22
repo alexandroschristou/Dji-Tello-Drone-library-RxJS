@@ -12,7 +12,7 @@
 // Import necessary modules for the project
 
 import { Observable, from, Subject, BehaviorSubject, timer, EMPTY } from "rxjs";
-import { tap, map, distinctUntilChanged, mapTo, filter, concatMap, scan, take } from "rxjs/operators";
+import { tap, map, distinctUntilChanged, mapTo, filter, concatMap, scan, take, debounceTime } from "rxjs/operators";
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
 
@@ -93,10 +93,8 @@ class TelloService {
 
   get_state_field(key) {
     if (this.telloClient.state_data.hasOwnProperty(key)) {
-      this.telloClient.state_data[key].subscribe(val => {
-        console.log("value for key: " + key + " is " + val);
-        return this.telloClient.state_data[key];
-      })
+
+      return this.telloClient.state_data[key];
 
     }
     else {
@@ -239,84 +237,126 @@ class TelloService {
   }
 
   get_mission_pad_id() {
-    this.get_state_field('mid')
+    return this.get_state_field('mid')
   }
 
   get_mission_pad_distance_x() {
-    this.get_state_field('x')
+    return this.get_state_field('x')
   }
 
   get_mission_pad_distance_y() {
-    this.get_state_field('y')
+    return this.get_state_field('y')
   }
 
   get_mission_pad_distance_z() {
 
-    this.get_state_field('z')
+    return this.get_state_field('z')
   }
 
   get_pitch() {
-    this.get_state_field('pitch')
+    return this.get_state_field('pitch')
   }
 
   get_roll() {
-    this.get_state_field('roll')
+    return this.get_state_field('roll')
   }
 
   get_yaw() {
-    this.get_state_field('yaw')
+    return this.get_state_field('yaw')
   }
 
   get_Xspeed() {
-    this.get_state_field('vgx')
+    return this.get_state_field('vgx')
   }
 
   get_Yspeed() {
-    this.get_state_field('vgy')
+    return this.get_state_field('vgy')
   }
 
   get_Zspeed() {
-    this.get_state_field('vgz')
+    return this.get_state_field('vgz')
   }
 
   get_lowest_temp() {
-    this.get_state_field('templ')
+    return this.get_state_field('templ')
   }
 
   get_highest_temp() {
-    this.get_state_field('temph')
+    return this.get_state_field('temph')
   }
 
   get_time_of_flight() {
-    this.get_state_field('tof')
+    return this.get_state_field('tof')
   }
 
   get_height() {
-    this.get_state_field('h')
+    return this.get_state_field('h')
   }
 
   get_battery_percentage() {
-    this.get_state_field('bat')
+    return this.get_state_field('bat')
   }
 
   get_barometer() {
-    this.get_state_field('baro')
+    return this.get_state_field('baro')
   }
 
   get_motor_time() {
-    this.get_state_field('time')
+    return this.get_state_field('time')
   }
 
   get_Xacceleration() {
-    this.get_state_field('agx')
+    return this.get_state_field('agx')
   }
 
   get_Yacceleration() {
-    this.get_state_field('agy')
+    return this.get_state_field('agy')
   }
 
   get_Zacceleration() {
-    this.get_state_field('agz')
+    return this.get_state_field('agz')
+  }
+
+  monitor_height(min, max) {
+    let test = this.get_height();
+      test.pipe(
+        distinctUntilChanged(),
+        debounceTime(1000)
+        )
+      .subscribe(
+        val => {
+          if(val < min){
+            console.log(val, "we go up")
+            this.move_up(30)
+          }
+          else if (val > max){
+            console.log(val, "we go down")
+            this.move_down(60)
+          }
+          else {
+            console.log(val)
+          }
+        })
+  }
+
+  monitor(state, min, max, response, response2, amount){
+    let test = state.call(this);
+    test.pipe(
+      distinctUntilChanged(),
+      debounceTime(1000)
+    ).subscribe(
+      val => {
+        if (val < min){
+          response.call(this, amount)
+        }
+        else if (val > max){
+          response2.call(this, amount)
+        }
+        else {
+          console.log("we goood")
+        }
+      }
+    )
   }
 
   test2(first, second, third) {
@@ -598,9 +638,21 @@ tello.init();
 //tello.start_web_server();
 
 service.command();
-service.streamon();
-//service.enable_mission_pads();
-//service.takeoff()
+service.takeoff()
+let test = service.get_yaw().subscribe(x => console.log(x))
+service.monitor(service.get_yaw, -20, 20, service.rotate_clockwise, service.rotate_counter_clockwise, 60)
+
+// service.streamon();
+// service.enable_mission_pads();
+// 
+
+// setTimeout(function () {
+//   service.monitor(service.get_height,80, 100, service.move_up, service.move_down, 30);
+// }, 3000)
+
+// setTimeout(function () {
+//   service.land()
+// }, 25000)
 //service.move_up(50)
 //service.go_xyz_speed_mid(20, 20, 130, 20, 4);
 
@@ -610,8 +662,8 @@ service.streamon();
 //   service.land();
 // }, 20000)
 
-service.test2(service.get_height, service.get_highest_temp, service.get_lowest_temp)
-tello.state_data.h.next(2);
+//service.test2(service.get_height, service.get_highest_temp, service.get_lowest_temp)
+//tello.state_data.h.next(2);
 
 
 // service.takeoff()
@@ -625,4 +677,4 @@ tello.state_data.h.next(2);
 //   tello.send_simple_command("height?")
 // });
 
-
+//bij landen zouden alle processen die checken complete moeten zijn anders land de drone ni
