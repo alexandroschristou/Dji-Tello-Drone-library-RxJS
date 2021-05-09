@@ -16,9 +16,6 @@ import { tap, map, distinctUntilChanged, mapTo, filter, concatMap, scan, take, d
 import * as tf from "@tensorflow/tfjs";
 import * as posenet from "@tensorflow-models/posenet";
 
-const timestamp = require('performance-now');
-const numeral = require('numeral');
-const P = require('bluebird');
 // A basic http server that we'll access to view the stream
 const http = require('http');
 // To keep things simple we read the index.html page and send it to the client
@@ -54,13 +51,13 @@ export function observableFromSocket(socket) {
     });
   });
 };
-export function log(description = '', badgeColor = 'darkCyan') {
-  const badge = color => `background:${color}; color:white; padding:4px; margin-right:4px; border-radius:3px; font-size:9px;`;
+
+export function log(description = '') {
 
   return tap({
-    next: value => console.log(`%c${description}: ${value}`, badge(badgeColor), value),
-    error: error => console.log(`%c${description} (error)`, badge('fireBrick'), error),
-    complete: () => console.log(`%c${description} (complete)`, badge('slateGray'))
+    next: value => console.log(`%c${description}: ${value}`, value),
+    error: error => console.log(`%c${description} (error)`, error),
+    complete: () => console.log(`%c${description} (complete)`)
   });
 }
 
@@ -76,9 +73,9 @@ class TelloService {
     this.telloClient = telloClient;
     this.commandQueue$
       .pipe(
-        log("added to queue >>", "slateGray"),
+        log("added to queue >>"),
         concatMap(command => telloClient.send_command_with_return(command)),
-        log("DONE", "darkOrange")
+        log("DONE")
       )
       .subscribe();
   }
@@ -93,23 +90,39 @@ class TelloService {
 
   get_state_field(key) {
     if (this.telloClient.state_data.hasOwnProperty(key)) {
-
       return this.telloClient.state_data[key];
-
     }
     else {
       console.log("error state isn't known, not in state_data")
     }
   }
 
+  checkMoveLimits(distance) {
+    if (distance < this.telloClient.moveLimits.lower || distance > this.telloClient.moveLimits.upper) {
+      return false
+    }
+    else {
+      return true
+    }
+  }
+  checkRotationLimits(range) {
+    if (range < this.telloClient.rotationLimits.lower || range > this.telloClient.rotationLimits.upper) {
+      return false
+    }
+    else {
+      return true
+    }
+  }
+
   takeoff() {
     this.sendCommand("takeoff")
-    this.IS_FLYING = true
+    this.telloClient.IS_FLYING.next(true)
+
   }
 
   land() {
     this.sendCommand("land")
-    this.IS_FLYING = false
+    this.telloClient.IS_FLYING.next(false)
   }
 
   command() {
@@ -118,11 +131,11 @@ class TelloService {
 
   streamon() {
     this.sendCommand("streamon")
-    this.STREAM_ON = true
+    this.telloClient.STREAM_ON.next(true)
   }
   streamoff() {
     this.sendCommand("streamoff")
-    this.STREAM_ON = false
+    this.telloClient.STREAM_ON.next(false)
   }
 
   emergency() {
@@ -130,7 +143,12 @@ class TelloService {
   }
 
   move(direction, distance) {
-    this.sendCommand(`${direction} ${distance}`)
+    if (this.checkMoveLimits(distance)) {
+      this.sendCommand(`${direction} ${distance}`)
+    }
+    else {
+      console.log(`error distance is out of range for move ${direction}`)
+    }
   }
 
   move_up(distance) {
@@ -157,11 +175,11 @@ class TelloService {
   }
 
   rotate_clockwise(degree) {
-    this.sendCommand(`cw ${degree}`)
+    this.checkRotationLimits(degree) ? this.sendCommand(`cw ${degree}`) : console.log(`error out of range for cw ${degree}`)
   }
 
   rotate_counter_clockwise(degree) {
-    this.sendCommand(`ccw ${degree}`)
+    this.checkRotationLimits(degree) ? this.sendCommand(`ccw ${degree}`) : console.log(`error out of range for ccw ${degree}`) 
   }
 
   flip(direction) {
@@ -317,80 +335,36 @@ class TelloService {
     return this.get_state_field('agz')
   }
 
-  monitor_height(min, max) {
-    let test = this.get_height();
-      test.pipe(
-        distinctUntilChanged(),
-        debounceTime(1000)
-        )
-      .subscribe(
-        val => {
-          if(val < min){
-            console.log(val, "we go up")
-            this.move_up(30)
-          }
-          else if (val > max){
-            console.log(val, "we go down")
-            this.move_down(60)
-          }
-          else {
-            console.log(val)
-          }
-        })
-  }
-
-  monitor(state, min, max, response, response2, amount){
-    let test = state.call(this);
-    test.pipe(
-      distinctUntilChanged(),
-      debounceTime(1000)
-    ).subscribe(
-      val => {
-        if (val < min){
-          response.call(this, amount)
-        }
-        else if (val > max){
-          response2.call(this, amount)
+  monitor(state, min, max, response, response2, amount) {
+    this.telloClient.IS_FLYING.pipe(distinctUntilChanged(), debounceTime(1000))
+      .subscribe(val => {
+        if (val) {
+          let CalledObservable = state.call(this);
+          let subscription = CalledObservable.pipe(
+            distinctUntilChanged(),
+            debounceTime(1000)
+          ).subscribe(
+            val => {
+              if (val < min) {
+                response.call(this, amount)
+              }
+              else if (val > max) {
+                response2.call(this, amount)
+              }
+              else {
+                console.log("we goood")
+              }
+            })
+          this.telloClient.processes.push(subscription);
         }
         else {
-          console.log("we goood")
+          this.telloClient.processes.forEach(element => {
+            element.unsubscribe();
+          });
+          console.log("here:");
+          console.log(this.telloClient.processes);
         }
-      }
-    )
-  }
-
-  test2(first, second, third) {
-    first.call(this);
-    second.call(this);
-    third.call(this);
-  }
-
-  test() {
-    this.telloClient.state_data.mid.
-      pipe(
-        distinctUntilChanged()
-      ).subscribe(
-        val => {
-          if (val == 1) {
-            this.move_right(40)
-            console.log("juuu")
-          }
-          else if (val == 2) {
-            this.move_forward(40)
-            console.log("juuu")
-          }
-          else if (val == 3) {
-            this.move_left(40)
-            console.log("juuu")
-          }
-          else if (val == 4) {
-            this.move_back(40)
-            console.log("looo")
-          }
-          else {
-            console.log("nub")
-          }
-        })
+      })
   }
 }
 
@@ -404,14 +378,13 @@ class Tello {
     this.STREAM_UDP_IP = '0.0.0.0'
     this.STREAM_UDP_PORT = 11111
 
-    this.IS_FLYING = false
-    this.STREAM_ON = false
+    this.IS_FLYING = new BehaviorSubject(false)
+    this.STREAM_ON = new BehaviorSubject(false)
 
-    this.RESPONSE_TIMEOUT = 7
-    this.TAKEOFF_TIMEOUT = 20  // in seconds
-    this.TIME_BTW_COMMANDS = 0.1 //# in seconds
-    this.TIME_BTW_RC_CONTROL_COMMANDS = 0.001  // in seconds
-    this.RETRY_COUNT = 3  // number of retries after a failed command
+    this.rotationLimits = { lower: 1, upper: 360 }
+    this.moveLimits = { lower: 20, upper: 500 }
+
+    this.processes = []
     this.state_data = {
       mid: null,
       x: null,
@@ -444,8 +417,8 @@ class Tello {
     this.streamServer = null
     this.webSocketServer = null
 
-    this.testSubject = new Subject();
-    this.testSubject.subscribe(
+    this.SendSubject = new Subject();
+    this.SendSubject.subscribe(
       msg => {
         console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
         this.Occupied = true;
@@ -469,9 +442,6 @@ class Tello {
         parentObject.state_data[x[0]].next(parseFloat(x[1]));
       }
     })
-
-    //this.state_data = dict;
-    //console.log(res);
   }
 
   /*
@@ -497,6 +467,7 @@ class Tello {
           response.end(JSON.stringify(err));
           return;
         }
+        console.log("looooool" + __dirname + '/www/' + request.url)
         response.writeHead(200);
         response.end(data);
       });
@@ -506,8 +477,6 @@ class Tello {
   2. Create the stream server where the video stream will be sent
 */
     parentObject.streamServer = http.createServer(function (request, response) {
-
-
       // console.log that a stream connection has come through
       console.log(
         'Stream Connection on ' + STREAM_PORT + ' from: ' +
@@ -555,8 +524,6 @@ class Tello {
         "http://127.0.0.1:3001/stream"
       ];
 
-
-
       // Spawn an ffmpeg instance
       var streamer = spawn('ffmpeg', args);
       // Uncomment if you want to see ffmpeg stream info
@@ -565,6 +532,8 @@ class Tello {
         console.log("Failure", code);
       });
     }, 3000);
+
+
   }
 
 
@@ -597,23 +566,21 @@ class Tello {
     for (const [key, value] of Object.entries(this.state_data)) {
       this.state_data[key] = new BehaviorSubject(null)
     }
-    //console.log(this.state_data)
   }
-
-
 
   send_command_with_return(msg) {
     let parentobject = this;
-
+    console.log("Occupied value is: " + this.Occupied)
     if (this.Occupied) {
       return new Observable(obs => {
         parentobject.Client
           .pipe(
+            distinctUntilChanged(),
             take(1))
           .subscribe(
             dataa => {
               obs.next(msg);
-              this.testSubject.next(msg);
+              this.SendSubject.next(msg);
               obs.complete();
             },
             err => console.error("Observer got an error: " + err),
@@ -622,59 +589,55 @@ class Tello {
       }).toPromise();
     }
     else {
-      parentobject.testSubject.next(msg);
+      parentobject.SendSubject.next(msg);
       return EMPTY;
     }
   }
 
   send_simple_command(msg) {
-    this.testSubject.next(msg);
+    this.SendSubject.next(msg);
   }
 }
 
 let tello = new Tello();
 let service = new TelloService(tello);
 tello.init();
-//tello.start_web_server();
+tello.start_web_server();
 
 service.command();
+service.streamon();
+
 service.takeoff()
-let test = service.get_yaw().subscribe(x => console.log(x))
-service.monitor(service.get_yaw, -20, 20, service.rotate_clockwise, service.rotate_counter_clockwise, 60)
-
-// service.streamon();
-// service.enable_mission_pads();
-// 
-
-// setTimeout(function () {
-//   service.monitor(service.get_height,80, 100, service.move_up, service.move_down, 30);
-// }, 3000)
-
-// setTimeout(function () {
-//   service.land()
-// }, 25000)
-//service.move_up(50)
-//service.go_xyz_speed_mid(20, 20, 130, 20, 4);
-
-//service.test()
-
-// setTimeout(function () {
-//   service.land();
-// }, 20000)
-
-//service.test2(service.get_height, service.get_highest_temp, service.get_lowest_temp)
-//tello.state_data.h.next(2);
+service.monitor(service.get_yaw, -40, 40, service.rotate_clockwise, service.rotate_counter_clockwise, 60)
+service.monitor(service.get_height, 60, 100, service.move_up, service.move_down, 20);
 
 
-// service.takeoff()
-// service.rotate_clockwise(90);
-// service.rotate_counter_clockwise(180);
-// service.land();
+console.log(`Please enter a command:`);
+rl.on("line", (line) => {
+  if (line == "l") {
+    service.land();
+  } else if (line == "t") {
+    service.takeoff()
+  } else if (line == "cw") {
+    service.rotate_clockwise(50)
+  } else if (line == "ccw") {
+    service.rotate_counter_clockwise(50)
+  } else if (line == "up") {
+    service.move_up(30)
+  } else if (line == "down") {
+    service.move_down(30)
+  } else if (line == "left") {
+    service.move_left(30)
+  } else if (line == "right") {
+    service.move_right(10)
+  } else if (line == "f") {
+    service.flip_back();
+  } else if (line == "test") {
 
+    tello.IS_FLYING.next(false)
+  }
+  else if (line == "test2") {
 
-// console.log(`Please enter a command:`);
-// rl.on("line", (line) => {
-//   tello.send_simple_command("height?")
-// });
-
-//bij landen zouden alle processen die checken complete moeten zijn anders land de drone ni
+    tello.IS_FLYING.next(true)
+  }
+});
