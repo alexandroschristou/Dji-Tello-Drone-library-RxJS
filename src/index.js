@@ -1,20 +1,20 @@
 /*
- * Created on Tue 3/24/2020
  *
- * Copyright (c) 2020 - DroneBlocks, LLC
  * Author: Dennis Baldwin
  * URL: https://github.com/dbaldwin/tello-video-nodejs-websockets
  *
- * PLEASE REVIEW THE README FILE FIRST
- * YOU MUST POWER UP AND CONNECT TO TELLO BEFORE RUNNING THIS SCRIPT
  */
 
 // Import necessary modules for the project
 
-import { Observable, from, Subject, BehaviorSubject, timer, EMPTY } from "rxjs";
+import { Observable, from, fromEvent, Subject, BehaviorSubject, timer, EMPTY } from "rxjs";
 import { tap, map, distinctUntilChanged, mapTo, filter, concatMap, scan, take, debounceTime } from "rxjs/operators";
-import * as tf from "@tensorflow/tfjs";
-import * as posenet from "@tensorflow-models/posenet";
+
+import { observableFromSocket, log} from "./utils";
+import { StateInterface } from "./StateInterface";
+import { CommandInterface } from "./CommandInterface";
+import { Tello_IP, Tello_Ports, Tello_Stream_IP } from "./utils";
+
 
 // A basic http server that we'll access to view the stream
 const http = require('http');
@@ -25,7 +25,7 @@ const WebSocket = require('ws');
 // We'll spawn ffmpeg as a separate process
 const spawn = require('child_process').spawn;
 // For sending SDK commands to Tello
-const dgram = require('dgram');
+
 // HTTP and streaming ports
 const HTTP_PORT = 3000;
 const STREAM_PORT = 3001
@@ -37,60 +37,196 @@ const rl = readline.createInterface({
   output: process.stdout,
 });
 
-/* code to make our own observable from a socket */
-export function observableFromSocket(socket) {
-  return new Observable(function subscribe(subscriber) {
-    socket.on('message', function (msg, info) {
-      subscriber.next([msg.toString(), info]);
-    });
-    socket.on("error", err => {
-      subscriber.error(err);
-    });
-    socket.on("close", () => {
-      subscriber.complete();
-    });
-  });
-};
-
-export function log(description = '') {
-
-  return tap({
-    next: value => console.log(`%c${description}: ${value}`, value),
-    error: error => console.log(`%c${description} (error)`, error),
-    complete: () => console.log(`%c${description} (complete)`)
-  });
-}
 
 /* 
   4. Send the command and streamon SDK commands to begin the Tello video stream.
   YOU MUST POWER UP AND CONNECT TO TELL BEFORE RUNNING THIS SCRIPT
 */
 
-class TelloService {
-  commandQueue$ = new Subject();
 
-  constructor(telloClient) {
-    this.telloClient = telloClient;
+export class Tello {
+  constructor() {
+    this.IS_FLYING = new BehaviorSubject(false)
+    this.STREAM_ON = new BehaviorSubject(false)
+
+    this.StateInterface = new StateInterface(this);
+    this.CommandInterface = new CommandInterface(this);
+
+    this.rotationLimits = { lower: 1, upper: 360 }
+    this.moveLimits = { lower: 20, upper: 500 }
+
+    this.processes = []
+    
+    this.Occupied = false
+
+    this.webServer = null
+    this.streamServer = null
+    this.webSocketServer = null
+
+    this.SendSubject = new Subject();
+   
+    this.commandQueue$ = new Subject();
+   
+  }
+
+  //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
+
+  
+
+  /*
+  1. Create the web server that the user can access at
+  http://localhost:3000/index.html
+*/
+  start_web_server() {
+    let parentObject = this;
+    parentObject.webServer = http.createServer(function (request, response) {
+
+      // console.log that an http connection has come through
+      console.log(
+        'HTTP Connection on ' + HTTP_PORT + ' from: ' +
+        request.socket.remoteAddress + ':' +
+        request.socket.remotePort
+      );
+
+      // Read file from the local directory and serve to user
+      // in this case it will be index.html
+      fs.readFile(__dirname + '/www/' + request.url, function (err, data) {
+        if (err) {
+          response.writeHead(404);
+          response.end(JSON.stringify(err));
+          return;
+        }
+        response.writeHead(200);
+        response.end(data);
+      });
+
+    }).listen(HTTP_PORT); // Listen on port 3000
+    /*
+  2. Create the stream server where the video stream will be sent
+*/
+    parentObject.streamServer = http.createServer(function (request, response) {
+      // console.log that a stream connection has come through
+      console.log(
+        'Stream Connection on ' + STREAM_PORT + ' from: ' +
+        request.socket.remoteAddress + ':' +
+        request.socket.remotePort
+      );
+
+      // When data comes from the stream (FFmpeg) we'll pass this to the web socket
+      request.on('data', function (data) {
+        // Now that we have data let's pass it to the web socket server
+        //console.log(data);
+        parentObject.webSocketServer.broadcast(data);
+      });
+
+    }).listen(STREAM_PORT); // Listen for streams on port 3001
+
+    /*
+      3. Begin web socket server
+    */
+    parentObject.webSocketServer = new WebSocket.Server({
+      server: parentObject.streamServer
+    });
+
+    // Broadcast the stream via websocket to connected clients
+    parentObject.webSocketServer.broadcast = function (data) {
+      
+      parentObject.webSocketServer.clients.forEach(function each(client) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(data);
+        }
+      });
+    };
+
+    /*
+  5. Begin the ffmpeg stream. You must have Tello connected first
+*/
+    //Delay for 3 seconds before we start ffmpeg
+    setTimeout(function () {
+      var args = [
+        "-i", "udp://0.0.0.0:11111",
+        "-r", "30",
+        "-s", "960x720",
+        "-codec:v", "mpeg1video",
+        "-b:v", "800k",
+        "-f", "mpegts",
+        "http://127.0.0.1:3001/stream"
+      ];
+      
+      //Spawn an ffmpeg instance
+      var streamer = spawn('ffmpeg', args);
+      
+      //Uncomment if you want to see ffmpeg stream info
+      //streamer.stderr.pipe(process.stdout);
+      streamer.on("exit", function (code) {
+        console.log("Failure", code);
+      });
+    }, 3000);
+  }
+
+
+  init() {
+    for (const [key, value] of Object.entries(this.StateInterface.get_drone_state())) {
+      this.StateInterface.state_data[key] = new BehaviorSubject(null)
+    }
+    this.SendSubject.subscribe(
+      msg => {
+        console.log("command received and send:", msg); 
+        this.Occupied = true;
+        this.CommandInterface.send_command(msg, Tello_Ports.Send, Tello_IP, null);
+      },
+      err => console.error("subject got an error: " + err),
+      () => console.log("subject got a complete notification")
+    );
+
     this.commandQueue$
       .pipe(
         log("added to queue >>"),
-        concatMap(command => telloClient.send_command_with_return(command)),
+        concatMap(command => this.send_command_with_return(command)),
         log("DONE")
       )
       .subscribe();
+  }
+
+  send_command_with_return(msg) {
+    let parentobject = this;
+    console.log("Occupied value is: " + this.Occupied)
+    if (this.Occupied) {
+      return new Observable(obs => {
+        parentobject.CommandInterface.Client
+          .pipe(
+            distinctUntilChanged(),
+            take(1))
+          .subscribe(
+            dataa => {
+              obs.next(msg);
+              this.SendSubject.next(msg);
+              obs.complete();
+            },
+            err => console.error("Observer got an error: " + err),
+            () => console.log("observer finished with " + msg + "\n")
+          );
+      }).toPromise();
+    }
+    else {
+      parentobject.SendSubject.next(msg);
+      return EMPTY;
+    }
+  }
+
+  send_simple_command(msg) {
+    this.SendSubject.next(msg);
   }
 
   sendCommand(command) {
     this.commandQueue$.next(command);
   }
 
-  send_simple_command(msg) {
-    this.telloClient.send_simple_command(msg)
-  }
 
   get_state_field(key) {
-    if (this.telloClient.state_data.hasOwnProperty(key)) {
-      return this.telloClient.state_data[key];
+    let state = this.StateInterface.get_drone_state();
+    if (state.hasOwnProperty(key)) {
+      return state[key];
     }
     else {
       console.log("error state isn't known, not in state_data")
@@ -98,7 +234,7 @@ class TelloService {
   }
 
   checkMoveLimits(distance) {
-    if (distance < this.telloClient.moveLimits.lower || distance > this.telloClient.moveLimits.upper) {
+    if (distance < this.moveLimits.lower || distance > this.moveLimits.upper) {
       return false
     }
     else {
@@ -106,7 +242,7 @@ class TelloService {
     }
   }
   checkRotationLimits(range) {
-    if (range < this.telloClient.rotationLimits.lower || range > this.telloClient.rotationLimits.upper) {
+    if (range < this.rotationLimits.lower || range > this.rotationLimits.upper) {
       return false
     }
     else {
@@ -114,15 +250,15 @@ class TelloService {
     }
   }
 
+  //#region commands
   takeoff() {
     this.sendCommand("takeoff")
-    this.telloClient.IS_FLYING.next(true)
-
+    this.IS_FLYING.next(true)
   }
 
   land() {
     this.sendCommand("land")
-    this.telloClient.IS_FLYING.next(false)
+    this.IS_FLYING.next(false)
   }
 
   command() {
@@ -131,11 +267,11 @@ class TelloService {
 
   streamon() {
     this.sendCommand("streamon")
-    this.telloClient.STREAM_ON.next(true)
+    this.STREAM_ON.next(true)
   }
   streamoff() {
     this.sendCommand("streamoff")
-    this.telloClient.STREAM_ON.next(false)
+    this.STREAM_ON.next(false)
   }
 
   emergency() {
@@ -179,7 +315,7 @@ class TelloService {
   }
 
   rotate_counter_clockwise(degree) {
-    this.checkRotationLimits(degree) ? this.sendCommand(`ccw ${degree}`) : console.log(`error out of range for ccw ${degree}`) 
+    this.checkRotationLimits(degree) ? this.sendCommand(`ccw ${degree}`) : console.log(`error out of range for ccw ${degree}`)
   }
 
   flip(direction) {
@@ -334,9 +470,10 @@ class TelloService {
   get_Zacceleration() {
     return this.get_state_field('agz')
   }
+  //#endregion
 
   monitor(state, min, max, response, response2, amount) {
-    this.telloClient.IS_FLYING.pipe(distinctUntilChanged(), debounceTime(1000))
+    this.IS_FLYING.pipe(distinctUntilChanged(), debounceTime(1000))
       .subscribe(val => {
         if (val) {
           let CalledObservable = state.call(this);
@@ -355,286 +492,59 @@ class TelloService {
                 console.log("we goood")
               }
             })
-          this.telloClient.processes.push(subscription);
+          this.processes.push(subscription);
         }
         else {
-          this.telloClient.processes.forEach(element => {
+          this.processes.forEach(element => {
             element.unsubscribe();
           });
           console.log("here:");
-          console.log(this.telloClient.processes);
+          console.log(this.processes);
         }
       })
   }
 }
 
-class Tello {
-  constructor() {
-    // Tello's ID and Port
-    this.TELLO_IP = '192.168.10.1'
-    this.TELLO_SEND_PORT = 8889
-    this.TELLO_STATE_PORT = 8890
 
-    this.STREAM_UDP_IP = '0.0.0.0'
-    this.STREAM_UDP_PORT = 11111
-
-    this.IS_FLYING = new BehaviorSubject(false)
-    this.STREAM_ON = new BehaviorSubject(false)
-
-    this.rotationLimits = { lower: 1, upper: 360 }
-    this.moveLimits = { lower: 20, upper: 500 }
-
-    this.processes = []
-    this.state_data = {
-      mid: null,
-      x: null,
-      y: null,
-      z: null,
-      mpry: null,
-      pitch: null,
-      roll: null,
-      yaw: null,
-      vgx: null,
-      vgy: null,
-      vgz: null,
-      templ: null,
-      temph: null,
-      tof: null,
-      h: null,
-      bat: null,
-      baro: null,
-      time: null,
-      agx: null,
-      agy: null,
-      agz: null
-    }
-    this.udpServer = null
-    this.udpClient = null
-    this.Client = null
-    this.Occupied = false
-
-    this.webServer = null
-    this.streamServer = null
-    this.webSocketServer = null
-
-    this.SendSubject = new Subject();
-    this.SendSubject.subscribe(
-      msg => {
-        console.log("command received and send:", msg); //normally this sends the command to the drone using UDP
-        this.Occupied = true;
-        this.udpClient.send(msg, this.TELLO_SEND_PORT, this.TELLO_IP, null);
-      },
-      err => console.error("subject got an error: " + err),
-      () => console.log("subject got a complete notification")
-    );
-  }
-
-  //https://github.com/damiafuentes/DJITelloPy/blob/master/djitellopy/tello.py
-
-  parse_state_data(data) {
-    let state = data[0].trim();
-    let additional_info = data[1];
-    let parentObject = this;
-    let res = state.split(";")
-    res.forEach(function (el) {
-      if (el.length > 1) {
-        var x = el.split(":")
-        parentObject.state_data[x[0]].next(parseFloat(x[1]));
-      }
-    })
-  }
-
-  /*
-  1. Create the web server that the user can access at
-  http://localhost:3000/index.html
-*/
-  start_web_server() {
-    let parentObject = this;
-    parentObject.webServer = http.createServer(function (request, response) {
-
-      // console.log that an http connection has come through
-      console.log(
-        'HTTP Connection on ' + HTTP_PORT + ' from: ' +
-        request.socket.remoteAddress + ':' +
-        request.socket.remotePort
-      );
-
-      // Read file from the local directory and serve to user
-      // in this case it will be index.html
-      fs.readFile(__dirname + '/www/' + request.url, function (err, data) {
-        if (err) {
-          response.writeHead(404);
-          response.end(JSON.stringify(err));
-          return;
-        }
-        console.log("looooool" + __dirname + '/www/' + request.url)
-        response.writeHead(200);
-        response.end(data);
-      });
-
-    }).listen(HTTP_PORT); // Listen on port 3000
-    /*
-  2. Create the stream server where the video stream will be sent
-*/
-    parentObject.streamServer = http.createServer(function (request, response) {
-      // console.log that a stream connection has come through
-      console.log(
-        'Stream Connection on ' + STREAM_PORT + ' from: ' +
-        request.socket.remoteAddress + ':' +
-        request.socket.remotePort
-      );
-
-      // When data comes from the stream (FFmpeg) we'll pass this to the web socket
-      request.on('data', function (data) {
-        // Now that we have data let's pass it to the web socket server
-        parentObject.webSocketServer.broadcast(data);
-      });
-
-    }).listen(STREAM_PORT); // Listen for streams on port 3001
-
-    /*
-      3. Begin web socket server
-    */
-    parentObject.webSocketServer = new WebSocket.Server({
-      server: parentObject.streamServer
-    });
-
-    // Broadcast the stream via websocket to connected clients
-    parentObject.webSocketServer.broadcast = function (data) {
-      parentObject.webSocketServer.clients.forEach(function each(client) {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(data);
-        }
-      });
-    };
-
-    /*
-  5. Begin the ffmpeg stream. You must have Tello connected first
-*/
-
-    //Delay for 3 seconds before we start ffmpeg
-    setTimeout(function () {
-      var args = [
-        "-i", "udp://0.0.0.0:11111",
-        "-r", "30",
-        "-s", "960x720",
-        "-codec:v", "mpeg1video",
-        "-b", "800k",
-        "-f", "mpegts",
-        "http://127.0.0.1:3001/stream"
-      ];
-
-      // Spawn an ffmpeg instance
-      var streamer = spawn('ffmpeg', args);
-      // Uncomment if you want to see ffmpeg stream info
-      //streamer.stderr.pipe(process.stderr);
-      streamer.on("exit", function (code) {
-        console.log("Failure", code);
-      });
-    }, 3000);
-
-
-  }
-
-
-  ////////////////////////////////////////////////////////behavioursubject///////////////////////////////
-  init() {
-    this.udpServer = dgram.createSocket('udp4');
-    this.udpServer.bind(this.TELLO_STATE_PORT);
-
-    this.udpClient = dgram.createSocket('udp4');
-    this.udpClient.bind(this.TELLO_SEND_PORT);
-
-    const Server = observableFromSocket(this.udpServer);
-    const observer = {
-      next: x => this.parse_state_data(x),
-      error: err => console.error('Observer got an error: ' + err),
-      complete: () => console.log('Observer got a complete notification')
-    };
-    Server.subscribe(observer)
-
-    this.Client = observableFromSocket(this.udpClient);
-    this.Client.subscribe(
-      x => {
-        this.Occupied = false
-        console.log("respone from drone is:", x)
-      },
-      err => console.error('Observer got an error: ' + err),
-      () => console.log('Observer got a complete notification')
-    )
-
-    for (const [key, value] of Object.entries(this.state_data)) {
-      this.state_data[key] = new BehaviorSubject(null)
-    }
-  }
-
-  send_command_with_return(msg) {
-    let parentobject = this;
-    console.log("Occupied value is: " + this.Occupied)
-    if (this.Occupied) {
-      return new Observable(obs => {
-        parentobject.Client
-          .pipe(
-            distinctUntilChanged(),
-            take(1))
-          .subscribe(
-            dataa => {
-              obs.next(msg);
-              this.SendSubject.next(msg);
-              obs.complete();
-            },
-            err => console.error("Observer got an error: " + err),
-            () => console.log("observer finished with " + msg + "\n")
-          );
-      }).toPromise();
-    }
-    else {
-      parentobject.SendSubject.next(msg);
-      return EMPTY;
-    }
-  }
-
-  send_simple_command(msg) {
-    this.SendSubject.next(msg);
-  }
-}
 
 let tello = new Tello();
-let service = new TelloService(tello);
 tello.init();
 tello.start_web_server();
+tello.command();
+tello.streamon();
+tello.takeoff();
 
-service.command();
-service.streamon();
-
-service.takeoff()
-service.monitor(service.get_yaw, -40, 40, service.rotate_clockwise, service.rotate_counter_clockwise, 60)
-service.monitor(service.get_height, 60, 100, service.move_up, service.move_down, 20);
+tello.monitor(tello.get_yaw, 0, 30, tello.rotate_clockwise, tello.rotate_counter_clockwise, 20);
 
 
 console.log(`Please enter a command:`);
+//var keyups = fromEvent(, "‘keyup’")
 rl.on("line", (line) => {
   if (line == "l") {
-    service.land();
+    tello.land();
   } else if (line == "t") {
-    service.takeoff()
+    tello.takeoff()
   } else if (line == "cw") {
-    service.rotate_clockwise(50)
+    tello.rotate_clockwise(50)
   } else if (line == "ccw") {
-    service.rotate_counter_clockwise(50)
+    tello.rotate_counter_clockwise(50)
   } else if (line == "up") {
-    service.move_up(30)
+    tello.move_up(30)
   } else if (line == "down") {
-    service.move_down(30)
+    tello.move_down(30)
   } else if (line == "left") {
-    service.move_left(30)
+    tello.move_left(30)
   } else if (line == "right") {
-    service.move_right(10)
+    tello.move_right(30)
   } else if (line == "f") {
-    service.flip_back();
-  } else if (line == "test") {
-
+    tello.flip_back();
+  } else if (line == "b") {
+    console.log(tello.get_battery_percentage());
+  }else if (line == "test") {
+    console.log(tello.processes)
     tello.IS_FLYING.next(false)
+    console.log(tello.processes)
+
   }
   else if (line == "test2") {
 
