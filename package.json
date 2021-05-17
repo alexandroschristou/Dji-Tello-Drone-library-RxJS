@@ -22,7 +22,9 @@
     "rx-node": "^1.0.2",
     "rx-udp": "^0.1.0",
     "rxjs": "^6.6.3",
-    "rxjs-marbles": "^7.0.0",
     "ws": "^7.4.3"
+  },
+  "devDependencies": {
+    "rxjs-marbles": "^7.0.0"
   }
 }
