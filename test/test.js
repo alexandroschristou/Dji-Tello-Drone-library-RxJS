@@ -1,7 +1,7 @@
-//import { marbles } from "rxjs-marbles/mocha";
-const marbles = () => require('rxjs-marbles/mocha');
-const map = () => require('rxjs/operators')
-//import { map } from "rxjs/operators";
+import { marbles } from "rxjs-marbles/mocha";
+//const marbles = () => require('rxjs-marbles/mocha');
+//const map = () => require('rxjs/operators')
+import { map } from "rxjs/operators";
 
 describe("rxjs-marbles", () => {
 
