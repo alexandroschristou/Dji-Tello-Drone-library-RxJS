@@ -44,17 +44,20 @@ const rl = readline.createInterface({
 
 
 export class Tello {
-  constructor() {
+  constructor(Tello_Ports, Tello_IP) {
     this.IS_FLYING = new BehaviorSubject(false)
     this.STREAM_ON = new BehaviorSubject(false)
+    this.Tello_Ports = Tello_Ports;
+    this.Tello_IP = Tello_IP;
 
     this.StateInterface = new StateInterface(this);
-    this.CommandInterface = new CommandInterface(this);
+    this.CommandInterface = new CommandInterface(this, this.Tello_Ports);
 
     this.rotationLimits = { lower: 1, upper: 360 }
     this.moveLimits = { lower: 20, upper: 500 }
 
     this.processes = []
+    this.response = null;
     
     this.Occupied = false
 
@@ -172,7 +175,7 @@ export class Tello {
       msg => {
         console.log("command received and send:", msg); 
         this.Occupied = true;
-        this.CommandInterface.send_command(msg, Tello_Ports.Send, Tello_IP, null);
+        this.CommandInterface.send_command(msg, Tello_Ports.Send, this.Tello_IP, null);
       },
       err => console.error("subject got an error: " + err),
       () => console.log("subject got a complete notification")
@@ -214,6 +217,7 @@ export class Tello {
   }
 
   send_simple_command(msg) {
+    console.log(msg)
     this.SendSubject.next(msg);
   }
 
@@ -506,47 +510,47 @@ export class Tello {
 
 
 
-let tello = new Tello();
-tello.init();
-tello.start_web_server();
-tello.command();
-tello.streamon();
-tello.takeoff();
+// let tello = new Tello(Tello_Ports, Tello_IP);
+// tello.init();
+// tello.start_web_server();
+// tello.command();
+// tello.streamon();
+// //tello.takeoff();
 
-tello.monitor(tello.get_yaw, 0, 30, tello.rotate_clockwise, tello.rotate_counter_clockwise, 20);
+// tello.monitor(tello.get_yaw, 0, 30, tello.rotate_clockwise, tello.rotate_counter_clockwise, 20);
 
 
-console.log(`Please enter a command:`);
-//var keyups = fromEvent(, "‘keyup’")
-rl.on("line", (line) => {
-  if (line == "l") {
-    tello.land();
-  } else if (line == "t") {
-    tello.takeoff()
-  } else if (line == "cw") {
-    tello.rotate_clockwise(50)
-  } else if (line == "ccw") {
-    tello.rotate_counter_clockwise(50)
-  } else if (line == "up") {
-    tello.move_up(30)
-  } else if (line == "down") {
-    tello.move_down(30)
-  } else if (line == "left") {
-    tello.move_left(30)
-  } else if (line == "right") {
-    tello.move_right(30)
-  } else if (line == "f") {
-    tello.flip_back();
-  } else if (line == "b") {
-    console.log(tello.get_battery_percentage());
-  }else if (line == "test") {
-    console.log(tello.processes)
-    tello.IS_FLYING.next(false)
-    console.log(tello.processes)
+// console.log(`Please enter a command:`);
+// //var keyups = fromEvent(, "‘keyup’")
+// rl.on("line", (line) => {
+//   if (line == "l") {
+//     tello.land();
+//   } else if (line == "t") {
+//     tello.takeoff()
+//   } else if (line == "cw") {
+//     tello.rotate_clockwise(50)
+//   } else if (line == "ccw") {
+//     tello.rotate_counter_clockwise(50)
+//   } else if (line == "up") {
+//     tello.move_up(30)
+//   } else if (line == "down") {
+//     tello.move_down(30)
+//   } else if (line == "left") {
+//     tello.move_left(30)
+//   } else if (line == "right") {
+//     tello.move_right(30)
+//   } else if (line == "f") {
+//     tello.flip_back();
+//   } else if (line == "b") {
+//     console.log(tello.get_battery_percentage());
+//   }else if (line == "test") {
+//     console.log(tello.processes)
+//     tello.IS_FLYING.next(false)
+//     console.log(tello.processes)
 
-  }
-  else if (line == "test2") {
+//   }
+//   else if (line == "test2") {
 
-    tello.IS_FLYING.next(true)
-  }
-});
+//     tello.IS_FLYING.next(true)
+//   }
+// });

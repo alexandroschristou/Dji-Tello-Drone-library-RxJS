@@ -25,6 +25,7 @@
     "ws": "^7.4.3"
   },
   "devDependencies": {
+    "chai": "^4.3.4",
     "rxjs-marbles": "^7.0.0"
   }
 }

@@ -1,13 +1,13 @@
 // import {Subject} from "rxjs";
 // import {distinctUntilChanged, concatMap, debounceTime } from "rxjs/operators";
 import {observableFromSocket} from "./utils"
-import { Tello_Ports } from "./utils";
+
 const dgram = require('dgram');
 
 
 export class CommandInterface {
 
-    constructor(Tello) {
+    constructor(Tello, Tello_Ports) {
         this.telloClient = Tello;
         this.udpServer = dgram.createSocket('udp4');
         this.udpServer.bind(Tello_Ports.State);
@@ -26,7 +26,8 @@ export class CommandInterface {
         this.Client = observableFromSocket(this.udpClient);
         this.Client.subscribe(
             x => {
-                Tello.Occupied = false
+                this.telloClient.Occupied = false
+                this.telloClient.response = x;
                 console.log("respone from drone is:", x)
             },
             err => console.error('Observer2 got an error: ' + err),
@@ -34,6 +35,7 @@ export class CommandInterface {
         )
     }
     send_command(msg, port, ip, callback){
+        console.log(msg, port, ip, callback);
         this.udpClient.send(msg, port, ip, callback);
     }
 }
