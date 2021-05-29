@@ -1,19 +1,11 @@
-import { assertValidOutputStride } from "@tensorflow-models/posenet/dist/util";
 import { BehaviorSubject } from "rxjs";
-import { marbles } from "rxjs-marbles/mocha";
-import { map } from "rxjs/operators";
 import { Tello } from "../src/index";
 import { Tello_Test_Ports, Tello_Test_IP } from "./utills";
-var assert = require('chai').assert;
+
 var expect = require('chai').expect;
 
 
 let tello = null;
-// beforeEach("initializing drone", function() {
-//     // runs once before the first test in this block
-//     tello = new Tello(Tello_Test_Ports, Tello_Test_IP);
-//     tello.init();
-//   });
 
 describe('Initializing drone', function () {
     it('drone should be initialized', function () {
@@ -50,7 +42,6 @@ describe('state data should be parsed correctly', function () {
         ]
         tello.StateInterface.parse_state_data(testdata);
         for (const [key, value] of Object.entries(tello.StateInterface.get_drone_state())) {
-            //            console.log(tello.StateInterface.state_data[key].getValue().instanceOf(Number))
             expect(tello.StateInterface.state_data[key].getValue()).to.be.a('number');
         }
     });
@@ -58,14 +49,68 @@ describe('state data should be parsed correctly', function () {
 })
 
 
-
 describe('Test sending message', function () {
-    it('message send should be equal to response', function (done) {
+    this.timeout(2000);
+    before(function(done){
         tello.send_command_with_return("TestCommand")
-        done();
-        tello.response[0].should.equal('TestCommand')
+        setTimeout(done, 1500)
+      });
+    it('message send should be equal to response', function () {
+        expect(tello.response[0]).to.be.equal('TestCommand')
     });
 });
+
+describe('Test sending rotation with in range value', function (){
+    this.timeout(1000);
+    this.beforeEach(function(done){
+        tello.response = null;
+        tello.rotate_clockwise(360)
+        setTimeout(done, 500)
+      });
+    it('rotation in range', function (done){
+        expect(tello.response[0]).to.be.equal('cw 360');
+        done()
+    })
+})
+
+describe('Test sending rotation with out of range value', function (){
+    this.timeout(1000);
+    this.beforeEach(function(done){
+        tello.response = null;
+        tello.rotate_clockwise(361)
+        setTimeout(done, 500)
+      });
+    it('rotation out of range', function (done){
+        expect(tello.response).to.be.null;
+        done()
+    })
+})
+
+describe('Test sending movement with in range value', function (){
+    this.timeout(1000);
+    this.beforeEach(function(done){
+        tello.response = null;
+        tello.move_up(500)
+        setTimeout(done, 500)
+      });
+    it('movement in range', function (done){
+        expect(tello.response[0]).to.be.equal('up 500');
+        done()
+    })
+})
+
+describe('Test sending movement with out of range value', function (){
+    this.timeout(1000);
+    this.beforeEach(function(done){
+        tello.response = null;
+        tello.rotate_clockwise(501)
+        setTimeout(done, 500)
+      });
+    it('movement out of range', function (done){
+        expect(tello.response).to.be.null;
+        done()
+    })
+})
 
 describe('Test flying', function () {
     it('flying variable should be set to true', function (done) {
@@ -84,22 +129,3 @@ describe('Test stream', function () {
         tello.response[0].should.equal('streamon')
     });
 });
-
-
-
-
-// describe("rxjs-marbles", () => {
-
-//     it("should support marble tests", marbles(m => {
-
-//         const source = m.hot("--^-a-b-c-|");
-//         const subs = "^-------!";
-//         const expected = "--b-c-d-|";
-
-//         const destination = source.pipe(
-//             map(value => String.fromCharCode(value.charCodeAt(0) + 1))
-//         );
-//         m.expect(destination).toBeObservable(expected);
-//         m.expect(source).toHaveSubscriptions(subs);
-//     }));
-// });

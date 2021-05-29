@@ -32,7 +32,6 @@ export class StateInterface {
     }
 
     parse_state_data(data) {
-        console.log(data)
         let state = data[0].trim();
         let additional_info = data[1];
         let parentObject = this;

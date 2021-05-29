@@ -18,37 +18,33 @@ var dgram = require('dgram');
 var CommandInterface =
 /*#__PURE__*/
 function () {
-  function CommandInterface(Tello) {
+  function CommandInterface(Tello, Tello_Ports) {
     var _this = this;
 
     _classCallCheck(this, CommandInterface);
 
     this.telloClient = Tello;
     this.udpServer = dgram.createSocket('udp4');
-    this.udpServer.bind(_utils.Tello_Ports.State);
+    this.udpServer.bind(Tello_Ports.State);
     this.udpClient = dgram.createSocket('udp4');
-    this.udpClient.bind(_utils.Tello_Ports.Send);
-    var Server = (0, _utils.observableFromSocket)(this.udpServer);
-    var observer = {
-      next: function next(x) {
-        return _this.telloClient.StateInterface.parse_state_data(x);
-      },
-      error: function error(err) {
-        return console.error('Observerrr got an error: ' + err);
-      },
-      complete: function complete() {
-        return console.log('Observer got a complete notification');
-      }
-    };
-    Server.subscribe(observer);
-    this.Client = (0, _utils.observableFromSocket)(this.udpClient);
-    this.Client.subscribe(function (x) {
-      Tello.Occupied = false;
-      console.log("respone from drone is:", x);
+    this.udpClient.bind(Tello_Ports.Send);
+    this.Server = (0, _utils.observableFromSocket)(this.udpServer);
+    this.ServerSubscriber = this.Server.subscribe(function (x) {
+      return _this.telloClient.StateInterface.parse_state_data(x);
     }, function (err) {
-      return console.error('Observer2 got an error: ' + err);
+      return console.error('Server got an error: ' + err);
     }, function () {
-      return console.log('Observer got a complete notification');
+      return console.log('Server got a complete notification');
+    });
+    this.Client = (0, _utils.observableFromSocket)(this.udpClient);
+    this.ClientSubscriber = this.Client.subscribe(function (x) {
+      _this.telloClient.Occupied = false;
+      _this.telloClient.response = x;
+      console.log("response from drone is:", x);
+    }, function (err) {
+      return console.error('Client got an error: ' + err);
+    }, function () {
+      return console.log('Client got a complete notification');
     });
   }
 
@@ -56,6 +52,14 @@ function () {
     key: "send_command",
     value: function send_command(msg, port, ip, callback) {
       this.udpClient.send(msg, port, ip, callback);
+    }
+  }, {
+    key: "close",
+    value: function close() {
+      this.ServerSubscriber.complete();
+      this.udpServer.close();
+      this.ClientSubscriber.complete();
+      this.udpClient.close();
     }
   }]);
 
